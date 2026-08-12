@@ -111,21 +111,18 @@ void lx_updateHeartButtonPosition() {
         return;
     }
 
+    CGFloat leftOffset = 24; // default/primary spot, same one Lyrication's own button uses when present
     UIButton *lyricationButton = lx_findLyricationButton(heartButton.superview);
+    if (lyricationButton != nil && !CGRectIsEmpty(lyricationButton.frame)) {
+        leftOffset = CGRectGetMaxX(lyricationButton.frame) + 16;
+    }
 
     if (heartButtonLeftConstraint != nil) {
-        heartButtonLeftConstraint.active = false;
-        heartButtonLeftConstraint = nil;
+        heartButtonLeftConstraint.constant = leftOffset;
+        return;
     }
 
-    if (lyricationButton != nil) {
-        // Lyrication is present - sit just to its right instead of overlapping.
-        heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: lyricationButton.trailingAnchor constant: 16];
-    } else {
-        // Lyrication isn't installed (or not showing here) - take its usual spot.
-        heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: heartButton.superview.leftAnchor constant: 24];
-    }
-
+    heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: heartButton.superview.leftAnchor constant: leftOffset];
     heartButtonLeftConstraint.active = true;
 }
 
@@ -140,8 +137,6 @@ void lx_updateHeartButtonPosition() {
         return;
     }
 
-    // Lyrication's own button may appear/disappear or move independently of
-    // us, so re-check our position on every layout pass, not just once.
     lx_updateHeartButtonPosition();
 }
 
