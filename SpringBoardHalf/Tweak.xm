@@ -100,6 +100,20 @@ UIButton *lx_findLyricationButton(UIView *container) {
     return nil;
 }
 
+CGFloat lx_nativeControlsMinX(UIView *container) {
+    CGFloat minX = CGFLOAT_MAX;
+    for (UIView *subview in container.subviews) {
+        if (subview == heartButton) continue;
+        if (![subview isKindOfClass: [UIButton class]]) continue;
+        UIButton *button = (UIButton *) subview;
+        NSString *title = [button currentTitle];
+        if ([title isEqualToString: @"LX"] || [title isEqualToString: @"♥"] || [title isEqualToString: @"♡"]) continue;
+        if (CGRectIsEmpty(button.frame)) continue;
+        minX = MIN(minX, CGRectGetMinX(button.frame));
+    }
+    return minX;
+}
+
 void lx_updateHeartButtonPosition() {
     if (!heartButton || !heartButton.superview) {
         return;
@@ -109,6 +123,15 @@ void lx_updateHeartButtonPosition() {
     UIButton *lyricationButton = lx_findLyricationButton(heartButton.superview);
     if (lyricationButton != nil && !CGRectIsEmpty(lyricationButton.frame)) {
         leftOffset = CGRectGetMaxX(lyricationButton.frame) + 8;
+    }
+
+    CGFloat estimatedWidth = 32; // heart glyph at 24pt + padding, a safe overestimate
+    CGFloat nativeMinX = lx_nativeControlsMinX(heartButton.superview);
+    if (nativeMinX < CGFLOAT_MAX) {
+        CGFloat maxAllowedOffset = nativeMinX - estimatedWidth - 8;
+        if (leftOffset > maxAllowedOffset) {
+            leftOffset = MAX(4, maxAllowedOffset);
+        }
     }
 
     if (heartButtonLeftConstraint != nil) {
