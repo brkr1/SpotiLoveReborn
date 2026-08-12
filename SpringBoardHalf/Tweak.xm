@@ -18,14 +18,7 @@ void lx_refreshLikedState() {
         return;
     }
 
-    CFPreferencesAppSynchronize(kLXPrefsAppID);
-    CFPropertyListRef value = CFPreferencesCopyValue(kLXPrefsIsLikedKey, kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (value != NULL) {
-        currentTrackIsLiked = CFBooleanGetValue((CFBooleanRef) value);
-        CFRelease(value);
-    } else {
-        currentTrackIsLiked = NO;
-    }
+    currentTrackIsLiked = lx_getLikedState();
     lx_updateHeartButtonAppearance();
 }
 
@@ -229,12 +222,8 @@ void lx_handleLikedStateChangedFromSpotify() {
             lx_refreshLikedState();
         }];
 
-    CFNotificationCenterAddObserver(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        NULL,
-        (CFNotificationCallback) lx_handleLikedStateChangedFromSpotify,
-        (__bridge CFStringRef) kLikedStateChangedDarwinNotification,
-        NULL,
-        CFNotificationSuspensionBehaviorDeliverImmediately
-    );
+    int token;
+    notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
+        lx_handleLikedStateChangedFromSpotify();
+    });
 }

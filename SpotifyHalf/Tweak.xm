@@ -18,20 +18,7 @@ static void lx_reportCurrentLikedState(void) {
 
     @try {
         BOOL isLiked = [lx_actionsHandler isCurrentTrackInCollection];
-        id trackURI = [lx_actionsHandler currentTrackURI];
-        NSString *trackURIString = [trackURI respondsToSelector: @selector(absoluteString)] ? [trackURI absoluteString] : [trackURI description];
-
-        CFPreferencesSetValue(kLXPrefsIsLikedKey, isLiked ? kCFBooleanTrue : kCFBooleanFalse,
-            kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        CFPreferencesSetValue(kLXPrefsTrackURIKey, (__bridge CFStringRef) (trackURIString ?: @""),
-            kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        CFPreferencesSynchronize(kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-
-        CFNotificationCenterPostNotification(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            (__bridge CFStringRef) kLikedStateChangedDarwinNotification,
-            NULL, NULL, true
-        );
+        lx_setLikedState(isLiked);
     } @catch (NSException *e) {
         // Best effort.
     }
