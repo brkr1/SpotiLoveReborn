@@ -1,7 +1,5 @@
 #import "../Shared.h"
 
-// draws the heart button on the lock screen
-
 UIButton *heartButton;
 NSLayoutConstraint *heartButtonBottomConstraint;
 BOOL currentTrackIsLiked = NO;
@@ -11,6 +9,8 @@ void lx_updateHeartButtonAppearance() {
         return;
     }
     [heartButton setTitle: (currentTrackIsLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
+    [heartButton setTitleColor: (currentTrackIsLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
+                       forState: UIControlStateNormal];
 }
 
 void lx_refreshLikedState() {
@@ -18,12 +18,14 @@ void lx_refreshLikedState() {
         return;
     }
 
-    MRMediaRemoteGetNowPlayingInfo(dispatch_get_main_queue(), ^(CFDictionaryRef information) {
-        NSDictionary *info = (__bridge NSDictionary*) information;
-        NSNumber *isLiked = info[(__bridge NSString*) kMRMediaRemoteNowPlayingInfoIsLiked];
-        currentTrackIsLiked = [isLiked boolValue];
-        lx_updateHeartButtonAppearance();
-    });
+    CFPropertyListRef value = CFPreferencesCopyValue(kLXPrefsIsLikedKey, kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (value != NULL) {
+        currentTrackIsLiked = CFBooleanGetValue((CFBooleanRef) value);
+        CFRelease(value);
+    } else {
+        currentTrackIsLiked = NO;
+    }
+    lx_updateHeartButtonAppearance();
 }
 
 @interface CSListItemActivityProvider: NSObject
@@ -90,6 +92,43 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
     });
 }
 
+NSLayoutConstraint *heartButtonLeftConstraint;
+
+UIButton *lx_findLyricationButton(UIView *container) {
+    for (UIView *subview in container.subviews) {
+        if ([subview isKindOfClass: [UIButton class]]) {
+            UIButton *button = (UIButton *) subview;
+            if ([[button currentTitle] isEqualToString: @"LX"]) {
+                return button;
+            }
+        }
+    }
+    return nil;
+}
+
+void lx_updateHeartButtonPosition() {
+    if (!heartButton || !heartButton.superview) {
+        return;
+    }
+
+    UIButton *lyricationButton = lx_findLyricationButton(heartButton.superview);
+
+    if (heartButtonLeftConstraint != nil) {
+        heartButtonLeftConstraint.active = false;
+        heartButtonLeftConstraint = nil;
+    }
+
+    if (lyricationButton != nil) {
+        // Lyrication is present - sit just to its right instead of overlapping.
+        heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: lyricationButton.trailingAnchor constant: 16];
+    } else {
+        // Lyrication isn't installed (or not showing here) - take its usual spot.
+        heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: heartButton.superview.leftAnchor constant: 24];
+    }
+
+    heartButtonLeftConstraint.active = true;
+}
+
 - (void) layoutSubviews {
     %orig;
 
@@ -98,7 +137,12 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
     if ((!isNowPlayingView || !lx_isPlayingFromSpotify()) && heartButton && [self.subviews containsObject: heartButton]) {
         [heartButton removeFromSuperview];
         heartButton = nil;
+        return;
     }
+
+    // Lyrication's own button may appear/disappear or move independently of
+    // us, so re-check our position on every layout pass, not just once.
+    lx_updateHeartButtonPosition();
 }
 
 - (void) didMoveToWindow {
@@ -135,7 +179,6 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
         currentTrackIsLiked = NO;
         lx_updateHeartButtonAppearance();
         [heartButton.titleLabel setFont: [UIFont systemFontOfSize: 24.0]];
-        [heartButton setTitleColor: [[UIColor labelColor] colorWithAlphaComponent: 0.85] forState: UIControlStateNormal];
 
         [self addSubview: heartButton];
 
@@ -145,7 +188,7 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
             heartButtonBottomConstraint = [heartButton.bottomAnchor constraintEqualToAnchor: self.bottomAnchor constant: -15];
         }
         heartButtonBottomConstraint.active = true;
-        [heartButton.leftAnchor constraintEqualToAnchor: self.leftAnchor constant: 70].active = true;
+        lx_updateHeartButtonPosition();
 
         [heartButton
             addTarget: self
@@ -168,6 +211,12 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
 
 %end
 
+void lx_handleLikedStateChangedFromSpotify() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        lx_refreshLikedState();
+    });
+}
+
 %ctor {
     [[NSNotificationCenter defaultCenter]
         addObserverForName: (__bridge NSString*) kMRMediaRemoteNowPlayingInfoDidChangeNotification
@@ -176,4 +225,13 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
         usingBlock: ^(NSNotification *note) {
             lx_refreshLikedState();
         }];
+
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        NULL,
+        (CFNotificationCallback) lx_handleLikedStateChangedFromSpotify,
+        (__bridge CFStringRef) kLikedStateChangedDarwinNotification,
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
 }

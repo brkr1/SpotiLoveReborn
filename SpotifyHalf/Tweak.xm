@@ -2,11 +2,40 @@
 
 @interface SPTNowPlayingAuxiliaryActionsHandlerImplementation : NSObject
 - (void) toggleCollectionState;
+- (void) toggleCollectionStateFromViewController: (id) viewController
+                                andActionControl: (id) actionControl
+                                 withConfirmation: (BOOL) confirmation;
 - (BOOL) isCurrentTrackInCollection;
 - (id) currentTrackURI;
 @end
 
 SPTNowPlayingAuxiliaryActionsHandlerImplementation *lx_actionsHandler;
+
+static void lx_reportCurrentLikedState(void) {
+    if (lx_actionsHandler == nil) {
+        return;
+    }
+
+    @try {
+        BOOL isLiked = [lx_actionsHandler isCurrentTrackInCollection];
+        id trackURI = [lx_actionsHandler currentTrackURI];
+        NSString *trackURIString = [trackURI respondsToSelector: @selector(absoluteString)] ? [trackURI absoluteString] : [trackURI description];
+
+        CFPreferencesSetValue(kLXPrefsIsLikedKey, isLiked ? kCFBooleanTrue : kCFBooleanFalse,
+            kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        CFPreferencesSetValue(kLXPrefsTrackURIKey, (__bridge CFStringRef) (trackURIString ?: @""),
+            kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        CFPreferencesSynchronize(kLXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            (__bridge CFStringRef) kLikedStateChangedDarwinNotification,
+            NULL, NULL, true
+        );
+    } @catch (NSException *e) {
+        // Best effort.
+    }
+}
 
 %hook SPTNowPlayingAuxiliaryActionsHandlerImplementation
 
@@ -31,6 +60,11 @@ SPTNowPlayingAuxiliaryActionsHandlerImplementation *lx_actionsHandler;
     return result;
 }
 
+- (void) auxiliaryActionsModelDidChangeCollectionState: (id) model {
+    %orig;
+    lx_reportCurrentLikedState();
+}
+
 %end
 
 void lx_handleLikeToggleNotification() {
@@ -40,10 +74,19 @@ void lx_handleLikeToggleNotification() {
 
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
-            [lx_actionsHandler toggleCollectionState];
+            [lx_actionsHandler toggleCollectionStateFromViewController: nil
+                                                       andActionControl: nil
+                                                        withConfirmation: NO];
         } @catch (NSException *e) {
             // Best effort.
         }
+
+        // The state-change hook above should already report the fresh
+        // value, but report again shortly after just in case the internal
+        // notification doesn't fire synchronously.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            lx_reportCurrentLikedState();
+        });
     });
 }
 
