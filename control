@@ -1,9 +1,17 @@
 Package: com.brkr1.tweaks.spotilovereborn
 Name: Spotilove Reborn
 Depends: mobilesubstrate
-Version: 1.1
+Version: 1.2
 Architecture: iphoneos-arm
-Description: v1.1: Fixed unliking not working (was opening a playlist list instead).
+Description: Adds a heart button to the lock screen Now Playing widget.
+ v1.2:
+  Fix heart fill state and add support to NextUp3.
+ .
+ v1.1:
+  Fixed unliking not working (was opening a playlist list instead).
+ .
+ v1.0:
+  Adds a heart button to the lock screen Now Playing widget that adds/removes the current Spotify track from Liked Songs.
 Maintainer: brkr1
 Author: brkr1
 Section: Tweaks
