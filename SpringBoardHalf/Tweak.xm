@@ -112,17 +112,10 @@ void lx_updateHeartButtonPosition() {
         return;
     }
 
-    CGFloat gapAfterLyrication = 8;
-    CGFloat defaultOffset = 18;
-    if (@available(iOS 17, *)) {
-        gapAfterLyrication = 2;
-        defaultOffset = 12;
-    }
-
-    CGFloat leftOffset = defaultOffset; // used when Lyrication isn't present
+    CGFloat leftOffset = 18; // used when Lyrication isn't present
     UIButton *lyricationButton = lx_findLyricationButton(heartButton.superview);
     if (lyricationButton != nil && !CGRectIsEmpty(lyricationButton.frame)) {
-        leftOffset = CGRectGetMaxX(lyricationButton.frame) + gapAfterLyrication;
+        leftOffset = CGRectGetMaxX(lyricationButton.frame) + 8;
     }
 
     if (heartButtonLeftConstraint != nil) {
@@ -145,8 +138,6 @@ void lx_updateHeartButtonPosition() {
         return;
     }
 
-    // Lyrication's own button may appear/disappear or move independently of
-    // us, so re-check our position on every layout pass, not just once.
     lx_updateHeartButtonPosition();
 }
 
@@ -183,11 +174,7 @@ void lx_updateHeartButtonPosition() {
 
         currentTrackIsLiked = NO;
         lx_updateHeartButtonAppearance();
-        CGFloat heartFontSize = 24.0;
-        if (@available(iOS 17, *)) {
-            heartFontSize = 20.0;
-        }
-        [heartButton.titleLabel setFont: [UIFont systemFontOfSize: heartFontSize]];
+        [heartButton.titleLabel setFont: [UIFont systemFontOfSize: 24.0]];
 
         [self addSubview: heartButton];
 
@@ -198,6 +185,13 @@ void lx_updateHeartButtonPosition() {
         }
         heartButtonBottomConstraint.active = true;
         lx_updateHeartButtonPosition();
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            lx_updateHeartButtonPosition();
+        });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            lx_updateHeartButtonPosition();
+        });
 
         [heartButton
             addTarget: self
