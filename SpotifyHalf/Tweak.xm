@@ -81,12 +81,12 @@ void lx_handleLikeToggleNotification() {
             // Best effort.
         }
 
-        // The state-change hook above should already report the fresh
-        // value, but report again shortly after just in case the internal
-        // notification doesn't fire synchronously.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            lx_reportCurrentLikedState();
-        });
+        NSArray<NSNumber *> *delays = @[@0.4, @1.0, @2.0];
+        for (NSNumber *delay in delays) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([delay doubleValue] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                lx_reportCurrentLikedState();
+            });
+        }
     });
 }
 
