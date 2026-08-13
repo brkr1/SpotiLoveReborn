@@ -15,10 +15,25 @@ endif
 
 include $(THEOS)/makefiles/common.mk
 
+LX_PTRAUTH_FLAG := -fno-ptrauth-objc-class-ro
+LX_PTRAUTH_SUPPORTED := $(shell $(TARGET_CC) -target arm64e-apple-ios15.0 -x objective-c \
+	-fsyntax-only $(LX_PTRAUTH_FLAG) /dev/null >/dev/null 2>&1 && echo yes)
+
+ifeq ($(LX_PTRAUTH_SUPPORTED),yes)
+LX_PTRAUTH_CFLAGS := $(LX_PTRAUTH_FLAG)
+else ifeq ($(filter arm64e,$(ARCHS)),)
+LX_PTRAUTH_CFLAGS :=
+else
+$(error $(LX_PTRAUTH_FLAG) is not accepted by $(TARGET_CC), but arm64e is in ARCHS. \
+Building anyway emits signed class_ro pointers and produces a dylib that crashes every \
+process it is injected into. Build on macOS with Xcode's clang, which supports this flag.)
+endif
+
+
 TWEAK_NAME = SpotiloveRebornSpringBoard
 
 SpotiloveRebornSpringBoard_FILES = Tweak.xm ../Shared.m
-SpotiloveRebornSpringBoard_CFLAGS = -fobjc-arc
+SpotiloveRebornSpringBoard_CFLAGS = -fobjc-arc $(LX_PTRAUTH_CFLAGS)
 SpotiloveRebornSpringBoard_FRAMEWORKS = UIKit
 SpotiloveRebornSpringBoard_PRIVATE_FRAMEWORKS = MediaRemote
 
