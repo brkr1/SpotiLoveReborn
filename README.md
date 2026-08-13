@@ -4,6 +4,8 @@ Adds a heart button to your iOS lock screen's Now Playing widget to like the cur
 
 Tapping the heart triggers the exact same native "toggle Liked Songs" action Spotify's own in-app heart button uses, so it behaves identically to liking a song from inside Spotify.
 
+<img width="1290" height="579" alt="IMG_0482" src="https://github.com/user-attachments/assets/1ef4b9c2-67e2-470b-b1db-fce0a2a3bc8b" />
+
 ## Features
 
 - Heart button on the lock screen Now Playing widget (iOS 16+)
