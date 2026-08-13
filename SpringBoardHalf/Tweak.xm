@@ -1,7 +1,6 @@
 #import "../Shared.h"
 
 UIButton *heartButton;
-NSLayoutConstraint *heartButtonBottomConstraint;
 BOOL currentTrackIsLiked = NO;
 
 void lx_updateHeartButtonAppearance() {
@@ -86,10 +85,9 @@ bool lx_activityViewIsNowPlayingView(CSActivityItemContentView* questionedView) 
     });
 }
 
-NSLayoutConstraint *heartButtonLeftConstraint;
-
 UIButton *lx_findLyricationButton(UIView *container) {
-    for (UIView *subview in container.subviews) {
+    NSArray<UIView *> *subviewsSnapshot = [container.subviews copy];
+    for (UIView *subview in subviewsSnapshot) {
         if ([subview isKindOfClass: [UIButton class]]) {
             UIButton *button = (UIButton *) subview;
             if ([[button currentTitle] isEqualToString: @"LX"]) {
@@ -102,7 +100,8 @@ UIButton *lx_findLyricationButton(UIView *container) {
 
 CGFloat lx_nativeControlsMinX(UIView *container) {
     CGFloat minX = CGFLOAT_MAX;
-    for (UIView *subview in container.subviews) {
+    NSArray<UIView *> *subviewsSnapshot = [container.subviews copy];
+    for (UIView *subview in subviewsSnapshot) {
         if (subview == heartButton) continue;
         if (![subview isKindOfClass: [UIButton class]]) continue;
         UIButton *button = (UIButton *) subview;
@@ -114,33 +113,33 @@ CGFloat lx_nativeControlsMinX(UIView *container) {
     return minX;
 }
 
-void lx_updateHeartButtonPosition() {
-    if (!heartButton || !heartButton.superview) {
+void lx_layoutHeartButton(UIView *container) {
+    if (!heartButton) {
         return;
     }
 
-    CGFloat leftOffset = 18; // used when Lyrication isn't present
-    UIButton *lyricationButton = lx_findLyricationButton(heartButton.superview);
+    CGFloat leftOffset = 18;
+    UIButton *lyricationButton = lx_findLyricationButton(container);
     if (lyricationButton != nil && !CGRectIsEmpty(lyricationButton.frame)) {
         leftOffset = CGRectGetMaxX(lyricationButton.frame) + 8;
     }
 
-    CGFloat estimatedWidth = 32; // heart glyph at 24pt + padding, a safe overestimate
-    CGFloat nativeMinX = lx_nativeControlsMinX(heartButton.superview);
+    CGSize fitSize = [heartButton sizeThatFits: CGSizeMake(100, 100)];
+    CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
+    CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
+
+    CGFloat nativeMinX = lx_nativeControlsMinX(container);
     if (nativeMinX < CGFLOAT_MAX) {
-        CGFloat maxAllowedOffset = nativeMinX - estimatedWidth - 8;
+        CGFloat maxAllowedOffset = nativeMinX - width - 8;
         if (leftOffset > maxAllowedOffset) {
             leftOffset = MAX(4, maxAllowedOffset);
         }
     }
 
-    if (heartButtonLeftConstraint != nil) {
-        heartButtonLeftConstraint.constant = leftOffset;
-        return;
-    }
+    CGFloat bottomInset = (container.bounds.size.height >= 170) ? 47 : 15;
+    CGFloat y = container.bounds.size.height - bottomInset - height;
 
-    heartButtonLeftConstraint = [heartButton.leftAnchor constraintEqualToAnchor: heartButton.superview.leftAnchor constant: leftOffset];
-    heartButtonLeftConstraint.active = true;
+    heartButton.frame = CGRectMake(leftOffset, y, width, height);
 }
 
 - (void) layoutSubviews {
@@ -154,7 +153,7 @@ void lx_updateHeartButtonPosition() {
         return;
     }
 
-    lx_updateHeartButtonPosition();
+    lx_layoutHeartButton(self);
 }
 
 - (void) didMoveToWindow {
@@ -186,27 +185,21 @@ void lx_updateHeartButtonPosition() {
         }
 
         heartButton = [[UIButton alloc] init];
-        heartButton.translatesAutoresizingMaskIntoConstraints = false;
+        heartButton.translatesAutoresizingMaskIntoConstraints = true;
 
         currentTrackIsLiked = NO;
         lx_updateHeartButtonAppearance();
         [heartButton.titleLabel setFont: [UIFont systemFontOfSize: 24.0]];
 
         [self addSubview: heartButton];
+        lx_layoutHeartButton(self);
 
-        if (self.bounds.size.height >= 170) {
-            heartButtonBottomConstraint = [heartButton.bottomAnchor constraintEqualToAnchor: self.bottomAnchor constant: -47];
-        } else {
-            heartButtonBottomConstraint = [heartButton.bottomAnchor constraintEqualToAnchor: self.bottomAnchor constant: -15];
-        }
-        heartButtonBottomConstraint.active = true;
-        lx_updateHeartButtonPosition();
-
+        __weak CSActivityItemContentView *weakSelf = self;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            lx_updateHeartButtonPosition();
+            if (weakSelf) lx_layoutHeartButton(weakSelf);
         });
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            lx_updateHeartButtonPosition();
+            if (weakSelf) lx_layoutHeartButton(weakSelf);
         });
 
         [heartButton
