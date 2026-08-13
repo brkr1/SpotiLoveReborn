@@ -1,9 +1,9 @@
 Package: com.brkr1.tweaks.spotilovereborn
 Name: SpotiLove Reborn
 Depends: mobilesubstrate
-Version: 1.3
+Version: 1.2
 Architecture: iphoneos-arm
-Description: v1.3: Found and fixed the real reason iOS 17 support wasn't working. fml
+Description: v1.2: Found and fixed the real reason iOS 17 support wasn't working. fml
 Maintainer: brkr1
 Author: brkr1
 Section: Tweaks
