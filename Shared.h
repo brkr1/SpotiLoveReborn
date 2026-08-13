@@ -12,6 +12,7 @@ extern "C" {
 
 BOOL lx_isPlayingFromSpotify(void);
 
+// Called by the Spotify half whenever it knows the real liked state.
 static inline void lx_setLikedState(BOOL isLiked) {
     static int token = -1;
     if (token == -1 && notify_register_check(kLikedStateNotifyName, &token) != NOTIFY_STATUS_OK) {
@@ -22,6 +23,7 @@ static inline void lx_setLikedState(BOOL isLiked) {
     notify_post(kLikedStateNotifyName);
 }
 
+// Called by the SpringBoard half to read the real liked state. Always live -
 static inline BOOL lx_getLikedState(void) {
     static int token = -1;
     if (token == -1 && notify_register_check(kLikedStateNotifyName, &token) != NOTIFY_STATUS_OK) {

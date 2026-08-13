@@ -136,18 +136,11 @@ void lx_layoutHeartButton(UIView *container) {
     CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
     CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
 
-    BOOL skipNativeClamp = NO;
-    if (@available(iOS 17, *)) {
-        skipNativeClamp = YES;
-    }
-
-    if (!skipNativeClamp) {
-        CGFloat nativeMinX = lx_nativeControlsMinX(container);
-        if (nativeMinX < CGFLOAT_MAX) {
-            CGFloat maxAllowedOffset = nativeMinX - width - 8;
-            if (leftOffset > maxAllowedOffset) {
-                leftOffset = MAX(4, maxAllowedOffset);
-            }
+    CGFloat nativeMinX = lx_nativeControlsMinX(container);
+    if (nativeMinX < CGFLOAT_MAX) {
+        CGFloat maxAllowedOffset = nativeMinX - width - 8;
+        if (leftOffset > maxAllowedOffset) {
+            leftOffset = MAX(4, maxAllowedOffset);
         }
     }
 
@@ -173,6 +166,17 @@ void lx_layoutHeartButton(UIView *container) {
 
 - (void) didMoveToWindow {
     %orig;
+
+    // iOS 17+ is handled by MediaRemoteUIHalf instead, which hooks the
+    // actual content process directly rather than this SpringBoard-side
+    // composited frame - see that file for why.
+    if (@available(iOS 17, *)) {
+        if (heartButton && [self.subviews containsObject: heartButton]) {
+            [heartButton removeFromSuperview];
+            heartButton = nil;
+        }
+        return;
+    }
 
     if (@available(iOS 16, *)) {
         BOOL isNowPlayingView = lx_activityViewIsNowPlayingView(self);
