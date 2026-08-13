@@ -113,6 +113,14 @@ CGFloat lx_nativeControlsMinX(UIView *container) {
     return minX;
 }
 
+// iOS 16: dynamic clamp against native controls (confirmed working well).
+// iOS 17: that same clamp made the heart disappear entirely (no crash - an
+// Auto Layout-era theory that didn't hold up even after switching to plain
+// frame math, so the real cause is still unclear). Until that's understood
+// properly, iOS 17 skips the clamp and just uses the simple LX-relative /
+// default offset - the exact behavior that was confirmed to at least show
+// the heart there (just imperfectly positioned), which beats it not
+// appearing at all.
 void lx_layoutHeartButton(UIView *container) {
     if (!heartButton) {
         return;
@@ -128,11 +136,18 @@ void lx_layoutHeartButton(UIView *container) {
     CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
     CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
 
-    CGFloat nativeMinX = lx_nativeControlsMinX(container);
-    if (nativeMinX < CGFLOAT_MAX) {
-        CGFloat maxAllowedOffset = nativeMinX - width - 8;
-        if (leftOffset > maxAllowedOffset) {
-            leftOffset = MAX(4, maxAllowedOffset);
+    BOOL skipNativeClamp = NO;
+    if (@available(iOS 17, *)) {
+        skipNativeClamp = YES;
+    }
+
+    if (!skipNativeClamp) {
+        CGFloat nativeMinX = lx_nativeControlsMinX(container);
+        if (nativeMinX < CGFLOAT_MAX) {
+            CGFloat maxAllowedOffset = nativeMinX - width - 8;
+            if (leftOffset > maxAllowedOffset) {
+                leftOffset = MAX(4, maxAllowedOffset);
+            }
         }
     }
 
