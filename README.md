@@ -11,11 +11,12 @@ Tapping the heart triggers the exact same native "toggle Liked Songs" action Spo
 - Heart button on the lock screen Now Playing widget (iOS 16+)
 - Only appears while Spotify is the app currently playing
 - Works entirely in the background via a small helper injected into Spotify's own process. No UI changes inside the Spotify app itself
-- Compatible with Lirycation Reborn
+- Compatible with Lirycation Reborn and NextUp3
 
 ## Tested Enviroment
 
 - iPhone 14 Pro Max 16.6.1 roothide Bootstrap
+- iPhone 15 iOS 17.0
 - Spotify (eevee) 9.1.0
 
 ## Installation
