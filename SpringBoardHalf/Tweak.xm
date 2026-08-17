@@ -98,7 +98,13 @@ UIButton *lx_findLyricationButton(UIView *container) {
     return nil;
 }
 
-CGFloat lx_nativeControlsMinX(UIView *container) {
+// The leftmost native transport button in the row (rewind, on every Now
+// Playing layout seen so far) - used both to keep the heart from overlapping
+// the native controls horizontally, and as the vertical anchor below, since
+// its own frame reflects Spotify's actual current layout instead of a
+// height-based guess about it.
+UIButton *lx_leftmostNativeControlButton(UIView *container) {
+    UIButton *leftmost = nil;
     CGFloat minX = CGFLOAT_MAX;
     NSArray<UIView *> *subviewsSnapshot = [container.subviews copy];
     for (UIView *subview in subviewsSnapshot) {
@@ -108,9 +114,17 @@ CGFloat lx_nativeControlsMinX(UIView *container) {
         NSString *title = [button currentTitle];
         if ([title isEqualToString: @"LX"] || [title isEqualToString: @"♥"] || [title isEqualToString: @"♡"]) continue;
         if (CGRectIsEmpty(button.frame)) continue;
-        minX = MIN(minX, CGRectGetMinX(button.frame));
+        if (CGRectGetMinX(button.frame) < minX) {
+            minX = CGRectGetMinX(button.frame);
+            leftmost = button;
+        }
     }
-    return minX;
+    return leftmost;
+}
+
+CGFloat lx_nativeControlsMinX(UIView *container) {
+    UIButton *leftmost = lx_leftmostNativeControlButton(container);
+    return leftmost ? CGRectGetMinX(leftmost.frame) : CGFLOAT_MAX;
 }
 
 // iOS 16: dynamic clamp against native controls (confirmed working well).
@@ -136,16 +150,28 @@ void lx_layoutHeartButton(UIView *container) {
     CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
     CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
 
-    CGFloat nativeMinX = lx_nativeControlsMinX(container);
-    if (nativeMinX < CGFLOAT_MAX) {
-        CGFloat maxAllowedOffset = nativeMinX - width - 8;
+    UIButton *rewindButton = lx_leftmostNativeControlButton(container);
+
+    if (rewindButton != nil) {
+        CGFloat maxAllowedOffset = CGRectGetMinX(rewindButton.frame) - width - 8;
         if (leftOffset > maxAllowedOffset) {
             leftOffset = MAX(4, maxAllowedOffset);
         }
     }
 
-    CGFloat bottomInset = (container.bounds.size.height >= 170) ? 47 : 15;
-    CGFloat y = container.bounds.size.height - bottomInset - height;
+    // Anchor to the rewind button's own frame rather than a height-based
+    // guess about where it should be - Spotify 9.1.72 added an "Up Next"
+    // row that grew the container's height, which broke the old guess (it
+    // assumed a fixed offset from the bottom, tuned for 9.1.0's shorter
+    // layout) without moving the actual button. Falls back to the old
+    // guess only if no native button can be found yet.
+    CGFloat y;
+    if (rewindButton != nil && !CGRectIsEmpty(rewindButton.frame)) {
+        y = CGRectGetMidY(rewindButton.frame) - (height / 2.0);
+    } else {
+        CGFloat bottomInset = (container.bounds.size.height >= 170) ? 47 : 15;
+        y = container.bounds.size.height - bottomInset - height;
+    }
 
     heartButton.frame = CGRectMake(leftOffset, y, width, height);
 }
