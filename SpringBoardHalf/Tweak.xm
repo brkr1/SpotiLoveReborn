@@ -128,33 +128,66 @@ UIButton *lx_findLyricationButton(UIView *container) {
     return nil;
 }
 
-// The leftmost native transport button in the row (rewind, on every Now
-// Playing layout seen so far) - used both to keep the heart from overlapping
-// the native controls horizontally, and as the vertical anchor below, since
-// its own frame reflects Spotify's actual current layout instead of a
-// height-based guess about it.
-UIButton *lx_leftmostNativeControlButton(UIView *container) {
-    UIButton *leftmost = nil;
-    CGFloat minX = CGFLOAT_MAX;
-    NSArray<UIView *> *subviewsSnapshot = [container.subviews copy];
-    for (UIView *subview in subviewsSnapshot) {
+// Recursively searches `view`'s descendants (skipping our own heart button)
+// for the leftmost native transport button (rewind, on every Now Playing
+// layout seen so far). The debug dump confirmed the real transport buttons
+// aren't direct children of the content view - they're nested inside a
+// single wrapping UIView one level deeper - so this walks the whole subtree
+// instead of just the immediate children. Frames are compared in
+// `container`'s own coordinate space (via convertRect:toView:) so nesting
+// depth doesn't skew which candidate looks "leftmost".
+void lx_searchLeftmostNativeControlButton(UIView *view, UIView *container, UIButton **outButton, CGRect *outFrame, CGFloat *minX) {
+    for (UIView *subview in [view.subviews copy]) {
         if (subview == heartButton) continue;
-        if (![subview isKindOfClass: [UIButton class]]) continue;
-        UIButton *button = (UIButton *) subview;
-        NSString *title = [button currentTitle];
-        if ([title isEqualToString: @"LX"] || [title isEqualToString: @"♥"] || [title isEqualToString: @"♡"]) continue;
-        if (CGRectIsEmpty(button.frame)) continue;
-        if (CGRectGetMinX(button.frame) < minX) {
-            minX = CGRectGetMinX(button.frame);
-            leftmost = button;
+        if ([subview isKindOfClass: [UIButton class]]) {
+            UIButton *button = (UIButton *) subview;
+            NSString *title = [button currentTitle];
+            if (![title isEqualToString: @"LX"] && ![title isEqualToString: @"♥"] && ![title isEqualToString: @"♡"] && !CGRectIsEmpty(button.bounds)) {
+                CGRect frameInContainer = [button convertRect: button.bounds toView: container];
+                if (CGRectGetMinX(frameInContainer) < *minX) {
+                    *minX = CGRectGetMinX(frameInContainer);
+                    *outButton = button;
+                    *outFrame = frameInContainer;
+                }
+            }
         }
+        lx_searchLeftmostNativeControlButton(subview, container, outButton, outFrame, minX);
+    }
+}
+
+// outFrame (if provided) is the found button's frame already converted into
+// `container`'s coordinate space - use that instead of the button's own
+// .frame, which is relative to whatever it's actually nested inside.
+UIButton *lx_leftmostNativeControlButton(UIView *container, CGRect *outFrame) {
+    UIButton *leftmost = nil;
+    CGRect frame = CGRectZero;
+    CGFloat minX = CGFLOAT_MAX;
+    lx_searchLeftmostNativeControlButton(container, container, &leftmost, &frame, &minX);
+    if (outFrame) {
+        *outFrame = frame;
     }
     return leftmost;
 }
 
 CGFloat lx_nativeControlsMinX(UIView *container) {
-    UIButton *leftmost = lx_leftmostNativeControlButton(container);
-    return leftmost ? CGRectGetMinX(leftmost.frame) : CGFLOAT_MAX;
+    CGRect frame;
+    UIButton *leftmost = lx_leftmostNativeControlButton(container, &frame);
+    return leftmost ? CGRectGetMinX(frame) : CGFLOAT_MAX;
+}
+
+// Full recursive subtree dump for the debug log - same technique that found
+// SBSystemApertureContainerView for IslandAura's live-tracking fix.
+void lx_dumpViewTree(UIView *view, UIView *container, NSMutableString *dump, NSInteger depth) {
+    for (UIView *subview in [view.subviews copy]) {
+        NSString *indent = [@"" stringByPaddingToLength: depth * 2 withString: @" " startingAtIndex: 0];
+        CGRect frameInContainer = [subview convertRect: subview.bounds toView: container];
+        [dump appendFormat: @"%@%@ frame=%@ frameInContainer=%@", indent, NSStringFromClass([subview class]), NSStringFromCGRect(subview.frame), NSStringFromCGRect(frameInContainer)];
+        if ([subview isKindOfClass: [UIButton class]]) {
+            [dump appendFormat: @" title=%@", [(UIButton *) subview currentTitle]];
+        }
+        [dump appendString: @"\n"];
+        lx_dumpViewTree(subview, container, dump, depth + 1);
+    }
 }
 
 // iOS 16: dynamic clamp against native controls (confirmed working well).
@@ -180,24 +213,27 @@ void lx_layoutHeartButton(UIView *container) {
     CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
     CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
 
-    UIButton *rewindButton = lx_leftmostNativeControlButton(container);
+    CGRect rewindFrame = CGRectZero;
+    UIButton *rewindButton = lx_leftmostNativeControlButton(container, &rewindFrame);
 
     if (rewindButton != nil) {
-        CGFloat maxAllowedOffset = CGRectGetMinX(rewindButton.frame) - width - 8;
+        CGFloat maxAllowedOffset = CGRectGetMinX(rewindFrame) - width - 8;
         if (leftOffset > maxAllowedOffset) {
             leftOffset = MAX(4, maxAllowedOffset);
         }
     }
 
-    // Anchor to the rewind button's own frame rather than a height-based
-    // guess about where it should be - Spotify 9.1.72 added an "Up Next"
-    // row that grew the container's height, which broke the old guess (it
-    // assumed a fixed offset from the bottom, tuned for 9.1.0's shorter
-    // layout) without moving the actual button. Falls back to the old
-    // guess only if no native button can be found yet.
+    // Anchor to the rewind button's own frame (converted into container's
+    // coordinate space, since it's nested inside a wrapping view rather than
+    // being a direct child - see lx_leftmostNativeControlButton) rather than
+    // a height-based guess about where it should be - Spotify 9.1.72 added
+    // an "Up Next" row that grew the container's height, which broke the
+    // old guess (it assumed a fixed offset from the bottom, tuned for
+    // 9.1.0's shorter layout) without moving the actual button. Falls back
+    // to the old guess only if no native button can be found yet.
     CGFloat y;
-    if (rewindButton != nil && !CGRectIsEmpty(rewindButton.frame)) {
-        y = CGRectGetMidY(rewindButton.frame) - (height / 2.0);
+    if (rewindButton != nil && !CGRectIsEmpty(rewindFrame)) {
+        y = CGRectGetMidY(rewindFrame) - (height / 2.0);
     } else {
         CGFloat bottomInset = (container.bounds.size.height >= 170) ? 47 : 15;
         y = container.bounds.size.height - bottomInset - height;
@@ -205,15 +241,9 @@ void lx_layoutHeartButton(UIView *container) {
 
     if (lx_debugLoggingEnabled()) {
         NSMutableString *dump = [NSMutableString stringWithFormat: @"layoutHeartButton: container=%@ bounds=%@\n", NSStringFromClass([container class]), NSStringFromCGRect(container.bounds)];
-        for (UIView *subview in [container.subviews copy]) {
-            [dump appendFormat: @"  subview class=%@ frame=%@", NSStringFromClass([subview class]), NSStringFromCGRect(subview.frame)];
-            if ([subview isKindOfClass: [UIButton class]]) {
-                [dump appendFormat: @" title=%@", [(UIButton *) subview currentTitle]];
-            }
-            [dump appendString: @"\n"];
-        }
+        lx_dumpViewTree(container, container, dump, 1);
         [dump appendFormat: @"lyricationButton=%@ frame=%@\n", lyricationButton, NSStringFromCGRect(lyricationButton.frame)];
-        [dump appendFormat: @"rewindButton=%@ frame=%@\n", rewindButton, NSStringFromCGRect(rewindButton.frame)];
+        [dump appendFormat: @"rewindButton=%@ frameInContainer=%@\n", rewindButton, NSStringFromCGRect(rewindFrame)];
         [dump appendFormat: @"chosen leftOffset=%.1f y=%.1f width=%.1f height=%.1f\n", leftOffset, y, width, height];
         lx_log(@"%@", dump);
     }
