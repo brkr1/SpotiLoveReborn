@@ -3,6 +3,36 @@
 UIButton *heartButton;
 BOOL currentTrackIsLiked = NO;
 
+// Marker-file-gated, same pattern already proven on IslandAura/SporeReborn/
+// IslandVolume this cycle: touch /var/mobile/Documents/SpotiLoveRebornDebug.enable
+// (Filza/SSH) to turn on, delete it to turn off, no respring needed.
+BOOL lx_debugLoggingEnabled(void) {
+    return [[NSFileManager defaultManager] fileExistsAtPath: @"/var/mobile/Documents/SpotiLoveRebornDebug.enable"];
+}
+
+void lx_log(NSString *format, ...) {
+    if (!lx_debugLoggingEnabled()) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat: format arguments: args];
+    va_end(args);
+
+    NSString *line = [NSString stringWithFormat: @"[%@] %@\n", [NSDate date], message];
+    NSLog(@"[SpotiLoveRebornDebug] %@", message);
+
+    NSString *path = @"/var/mobile/Documents/SpotiLoveRebornDebug.log";
+    if (![[NSFileManager defaultManager] fileExistsAtPath: path]) {
+        [[NSFileManager defaultManager] createFileAtPath: path contents: nil attributes: nil];
+    }
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath: path];
+    [handle seekToEndOfFile];
+    [handle writeData: [line dataUsingEncoding: NSUTF8StringEncoding]];
+    [handle closeFile];
+}
+
 void lx_updateHeartButtonAppearance() {
     if (!heartButton) {
         return;
@@ -171,6 +201,21 @@ void lx_layoutHeartButton(UIView *container) {
     } else {
         CGFloat bottomInset = (container.bounds.size.height >= 170) ? 47 : 15;
         y = container.bounds.size.height - bottomInset - height;
+    }
+
+    if (lx_debugLoggingEnabled()) {
+        NSMutableString *dump = [NSMutableString stringWithFormat: @"layoutHeartButton: container=%@ bounds=%@\n", NSStringFromClass([container class]), NSStringFromCGRect(container.bounds)];
+        for (UIView *subview in [container.subviews copy]) {
+            [dump appendFormat: @"  subview class=%@ frame=%@", NSStringFromClass([subview class]), NSStringFromCGRect(subview.frame)];
+            if ([subview isKindOfClass: [UIButton class]]) {
+                [dump appendFormat: @" title=%@", [(UIButton *) subview currentTitle]];
+            }
+            [dump appendString: @"\n"];
+        }
+        [dump appendFormat: @"lyricationButton=%@ frame=%@\n", lyricationButton, NSStringFromCGRect(lyricationButton.frame)];
+        [dump appendFormat: @"rewindButton=%@ frame=%@\n", rewindButton, NSStringFromCGRect(rewindButton.frame)];
+        [dump appendFormat: @"chosen leftOffset=%.1f y=%.1f width=%.1f height=%.1f\n", leftOffset, y, width, height];
+        lx_log(@"%@", dump);
     }
 
     heartButton.frame = CGRectMake(leftOffset, y, width, height);
