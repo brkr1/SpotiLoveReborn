@@ -40,7 +40,7 @@ endif
 
 TWEAK_NAME = SpotiloveRebornMediaRemoteUI
 
-SpotiloveRebornMediaRemoteUI_FILES = Tweak.xm
+SpotiloveRebornMediaRemoteUI_FILES = Tweak.xm DynamicIsland.xm
 SpotiloveRebornMediaRemoteUI_CFLAGS = -fobjc-arc $(LX_PTRAUTH_CFLAGS)
 SpotiloveRebornMediaRemoteUI_FRAMEWORKS = UIKit
 SpotiloveRebornMediaRemoteUI_PRIVATE_FRAMEWORKS = MediaRemote
