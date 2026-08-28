@@ -40,7 +40,7 @@ endif
 
 TWEAK_NAME = SpotiloveRebornSpotify
 
-SpotiloveRebornSpotify_FILES = Tweak.xm ../Shared.m
+SpotiloveRebornSpotify_FILES = Tweak.xm
 SpotiloveRebornSpotify_CFLAGS = -fobjc-arc $(LX_PTRAUTH_CFLAGS)
 SpotiloveRebornSpotify_FRAMEWORKS = UIKit
 SpotiloveRebornSpotify_PRIVATE_FRAMEWORKS = MediaRemote

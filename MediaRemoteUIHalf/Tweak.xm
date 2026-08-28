@@ -1,3 +1,12 @@
+// Now covers iOS 16+ (previously 17+ only). The heart button lives here
+// rather than in SpringBoard because MRUNowPlayingView's transportControlsView
+// is a real, local view only from inside this process - SpringBoard only
+// composites a remote scene for the lock screen widget's controls, so a
+// SpringBoard-side hook can only guess the transport row's Y with a fixed
+// offset. That's what SpringBoardHalf used to do (removed): one offset
+// tuned for the widget's compact-pill layout, which drifted out of line
+// with the real controls the moment the lock screen's tap-to-expand
+// full-screen state laid the same content out differently.
 #import "../Shared.h"
 #import <objc/runtime.h>
 
@@ -75,6 +84,19 @@ void lx_heartButtonTapped(void) {
     );
 }
 
+UIButton *lx_findMRULyricationButton(UIView *playerView) {
+    NSArray<UIView *> *subviewsSnapshot = [playerView.subviews copy];
+    for (UIView *subview in subviewsSnapshot) {
+        if ([subview isKindOfClass: [UIButton class]]) {
+            UIButton *button = (UIButton *) subview;
+            if ([[button currentTitle] isEqualToString: @"LX"]) {
+                return button;
+            }
+        }
+    }
+    return nil;
+}
+
 void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
     if (!lx_mruHeartButton) {
         return;
@@ -84,7 +106,18 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
     CGFloat width = fitSize.width > 0 ? fitSize.width : 32;
     CGFloat height = fitSize.height > 0 ? fitSize.height : 32;
 
+    // LyricationReborn's LX button (LockscreenButtonMRU/Tweak.xm) lives in
+    // this same MRUNowPlayingView and aligns itself to the real
+    // transportControlsView frame the same way this heart button does -
+    // anchoring the heart to LX's own frame keeps them on the same row as
+    // each other even if either one's alignment logic changes later,
+    // instead of both independently re-deriving the transport row's Y.
     CGFloat leftOffset = 18;
+    UIButton *lyricationButton = lx_findMRULyricationButton(playerView);
+    if (lyricationButton != nil && !CGRectIsEmpty(lyricationButton.frame)) {
+        leftOffset = CGRectGetMaxX(lyricationButton.frame) + 8;
+    }
+
     CGFloat y = playerView.bounds.size.height - height - 15;
 
     @try {
@@ -139,7 +172,7 @@ void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
 
 - (void) layoutSubviews {
     %orig;
-    if (@available(iOS 17, *)) {
+    if (@available(iOS 16, *)) {
         lx_ensureMRUHeartButton((MRUNowPlayingView *) self);
     }
 }
@@ -158,7 +191,7 @@ void lx_handleLikedStateChangedInMRU(void) {
 }
 
 %ctor {
-    if (@available(iOS 17, *)) {
+    if (@available(iOS 16, *)) {
         int token;
         notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
             lx_handleLikedStateChangedInMRU();
