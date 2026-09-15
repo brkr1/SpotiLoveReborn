@@ -31,6 +31,29 @@ static const long long kLXDIExpandedMode = 4; // activeLayoutMode when fully exp
 static const CGFloat kLXDIExpandedMinHeight = 120.0; // view is reused for the compact pill
 
 UIButton *lx_mruDIHeartButton;
+static LXMusicSource lx_mruDICurrentSource = LXMusicSourceUnknown;
+
+static BOOL lx_mruDILikedStateForCurrentSource(void) {
+    switch (lx_mruDICurrentSource) {
+        case LXMusicSourceSpotify: return lx_getLikedState();
+        case LXMusicSourceYouTubeMusic: return lx_getLikedStateYouTubeMusic();
+        default: return NO;
+    }
+}
+
+static void lx_mruDIPostLikeToggleForCurrentSource(void) {
+    NSString *name;
+    switch (lx_mruDICurrentSource) {
+        case LXMusicSourceSpotify: name = kLikeToggleDarwinNotification; break;
+        case LXMusicSourceYouTubeMusic: name = kLikeToggleDarwinNotificationYouTubeMusic; break;
+        default: return;
+    }
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge CFStringRef) name,
+        NULL, NULL, true
+    );
+}
 
 // Which of the two class generations applies, decided by which %init ran -
 // same trick as Crescendo's gCRDIExpanded.
@@ -70,7 +93,7 @@ void lx_updateMRUDIHeartButtonAppearance(void) {
     if (!lx_mruDIHeartButton) {
         return;
     }
-    BOOL isLiked = lx_getLikedState();
+    BOOL isLiked = lx_mruDILikedStateForCurrentSource();
     [lx_mruDIHeartButton setTitle: (isLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
     [lx_mruDIHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
                                forState: UIControlStateNormal];
@@ -88,11 +111,7 @@ void lx_mruDIHeartButtonTapped(void) {
         }];
     }];
 
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        (__bridge CFStringRef) kLikeToggleDarwinNotification,
-        NULL, NULL, true
-    );
+    lx_mruDIPostLikeToggleForCurrentSource();
 }
 
 void lx_layoutMRUDIHeartButton(UIView *host) {
@@ -243,8 +262,20 @@ void lx_handleLikedStateChangedInMRUDI(void) {
 %ctor {
     _dyld_register_func_for_add_image(LXDIImageAdded);
 
-    int token;
-    notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
+    int spotifyToken;
+    notify_register_dispatch(kLikedStateNotifyName, &spotifyToken, dispatch_get_main_queue(), ^(int t) {
+        lx_handleLikedStateChangedInMRUDI();
+    });
+
+    int ytMusicToken;
+    notify_register_dispatch(kLikedStateNotifyNameYouTubeMusic, &ytMusicToken, dispatch_get_main_queue(), ^(int t) {
+        lx_handleLikedStateChangedInMRUDI();
+    });
+
+    lx_registerForNowPlayingAppChanges(^{
+        lx_handleLikedStateChangedInMRUDI();
+    });
+    lx_refreshNowPlayingSource(&lx_mruDICurrentSource, ^{
         lx_handleLikedStateChangedInMRUDI();
     });
 }

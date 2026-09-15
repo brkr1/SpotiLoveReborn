@@ -54,12 +54,35 @@ static BOOL lx_isLockScreenContext(MRUNowPlayingViewController *vc) {
 }
 
 UIButton *lx_mruHeartButton;
+static LXMusicSource lx_mruCurrentSource = LXMusicSourceUnknown;
+
+static BOOL lx_mruLikedStateForCurrentSource(void) {
+    switch (lx_mruCurrentSource) {
+        case LXMusicSourceSpotify: return lx_getLikedState();
+        case LXMusicSourceYouTubeMusic: return lx_getLikedStateYouTubeMusic();
+        default: return NO;
+    }
+}
+
+static void lx_mruPostLikeToggleForCurrentSource(void) {
+    NSString *name;
+    switch (lx_mruCurrentSource) {
+        case LXMusicSourceSpotify: name = kLikeToggleDarwinNotification; break;
+        case LXMusicSourceYouTubeMusic: name = kLikeToggleDarwinNotificationYouTubeMusic; break;
+        default: return;
+    }
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge CFStringRef) name,
+        NULL, NULL, true
+    );
+}
 
 void lx_updateMRUHeartButtonAppearance(void) {
     if (!lx_mruHeartButton) {
         return;
     }
-    BOOL isLiked = lx_getLikedState();
+    BOOL isLiked = lx_mruLikedStateForCurrentSource();
     [lx_mruHeartButton setTitle: (isLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
     [lx_mruHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
                              forState: UIControlStateNormal];
@@ -77,11 +100,7 @@ void lx_heartButtonTapped(void) {
         }];
     }];
 
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        (__bridge CFStringRef) kLikeToggleDarwinNotification,
-        NULL, NULL, true
-    );
+    lx_mruPostLikeToggleForCurrentSource();
 }
 
 UIButton *lx_findMRULyricationButton(UIView *playerView) {
@@ -192,8 +211,20 @@ void lx_handleLikedStateChangedInMRU(void) {
 
 %ctor {
     if (@available(iOS 16, *)) {
-        int token;
-        notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
+        int spotifyToken;
+        notify_register_dispatch(kLikedStateNotifyName, &spotifyToken, dispatch_get_main_queue(), ^(int t) {
+            lx_handleLikedStateChangedInMRU();
+        });
+
+        int ytMusicToken;
+        notify_register_dispatch(kLikedStateNotifyNameYouTubeMusic, &ytMusicToken, dispatch_get_main_queue(), ^(int t) {
+            lx_handleLikedStateChangedInMRU();
+        });
+
+        lx_registerForNowPlayingAppChanges(^{
+            lx_handleLikedStateChangedInMRU();
+        });
+        lx_refreshNowPlayingSource(&lx_mruCurrentSource, ^{
             lx_handleLikedStateChangedInMRU();
         });
     }
