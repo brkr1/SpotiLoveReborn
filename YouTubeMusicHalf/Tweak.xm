@@ -169,6 +169,19 @@ static void lx_ytmRunAllDebugScans(void) {
 - (void) setLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track;
 @end
 
+// Round 4: none of round 3's YTMLikeEndpointCommandImpl/YTILikeButtonRenderer factory methods
+// ever fired for a real in-app tap - only handleLikeActionWithCommand:entry:fromView:sender:
+// does, and its entry/fromView/sender stay UI-cell-bound (ELMNodeController), which a lock
+// screen tap has no way to construct. YTLikeServiceImpl looks like the lower layer that
+// actually issues the network request from just a target (a simple video-id wrapper) and status
+// - no UI object in its signature at all - so this checks whether it's reachable independently.
+@interface YTLikeServiceImpl : NSObject
+- (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock;
+- (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
+- (id) requestForDislikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
+- (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
+@end
+
 %hook YTMLikeEndpointCommandImpl
 
 - (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
@@ -264,6 +277,37 @@ static void lx_ytmRunAllDebugScans(void) {
 - (void) setLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] setLikeStatusForTrackWithLikeEndpoint:%@ track:%@", likeEndpoint, track);
     %orig;
+}
+
+%end
+
+%hook YTLikeServiceImpl
+
+- (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@",
+          (long) status, target, clickTrackingParams, queueContextParams, requestParams);
+    %orig;
+}
+
+- (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] requestForLikeWithTarget:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld result:%@",
+          target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType, result);
+    return result;
+}
+
+- (id) requestForDislikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] requestForDislikeWithTarget:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld result:%@",
+          target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType, result);
+    return result;
+}
+
+- (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] requestForRemoveLikeWithTarget:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld result:%@",
+          target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType, result);
+    return result;
 }
 
 %end
