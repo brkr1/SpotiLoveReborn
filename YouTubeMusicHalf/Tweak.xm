@@ -107,6 +107,11 @@ static void lx_ytmDebugDumpFinalistClasses(void) {
         "YTMLikeStatusDidChangeResponderEvent",
         "YTMLikeActionOptimisticHandlerImpl",
         "YTMLikeResponseHandlerImpl",
+        // Round 6: requestForLikeWithTarget:... (round 4) returns one of these, but nothing
+        // hooked so far shows what actually sends it over the network. Dump it in case it has
+        // an obvious -send/-execute/-start method we can hook next round.
+        "YTInnerTubeRequest",
+        "YTILikeTarget",
     };
     for (size_t i = 0; i < sizeof(finalists) / sizeof(finalists[0]); i++) {
         lx_ytmDebugDumpClassAndInstanceMethods(finalists[i]);
@@ -177,6 +182,7 @@ static void lx_ytmRunAllDebugScans(void) {
 // - no UI object in its signature at all - so this checks whether it's reachable independently.
 @interface YTLikeServiceImpl : NSObject
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock;
+- (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType responseBlock: (id) responseBlock errorBlock: (id) errorBlock;
 - (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 - (id) requestForDislikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 - (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
@@ -286,6 +292,15 @@ static void lx_ytmRunAllDebugScans(void) {
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@",
           (long) status, target, clickTrackingParams, queueContextParams, requestParams);
+    %orig;
+}
+
+// Round 6: round 4 only hooked the 7-param overload (no requestDispatchType), which never fired.
+// requestForLikeWithTarget:... returns a requestDispatchType, so the real caller almost
+// certainly uses this 8-param overload instead - missed it in round 4's declaration.
+- (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld",
+          (long) status, target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType);
     %orig;
 }
 
