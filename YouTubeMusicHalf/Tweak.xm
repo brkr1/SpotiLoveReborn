@@ -2,6 +2,44 @@
 #import <objc/runtime.h>
 #include <string.h>
 
+// Read-only introspection of a block's compiler-embedded Objective-C type-encoding signature
+// (the same mechanism NSInvocation/KVO use), so we can learn responseBlock/errorBlock's real
+// argument types without guessing and risking a call-signature mismatch. Never invokes the
+// block - only reads its layout, so this is safe even if the flag/signature turn out absent.
+struct lx_BlockDescriptor {
+    unsigned long reserved;
+    unsigned long size;
+    void *rest[1];
+};
+
+struct lx_BlockLiteral {
+    void *isa;
+    int flags;
+    int reserved;
+    void *invoke;
+    struct lx_BlockDescriptor *descriptor;
+};
+
+static const int kLXBlockHasCopyDispose = (1 << 25);
+static const int kLXBlockHasSignature = (1 << 30);
+
+static NSString *lx_ytmBlockSignature(id blockObj) {
+    if (!blockObj) {
+        return @"(nil)";
+    }
+    struct lx_BlockLiteral *block = (__bridge struct lx_BlockLiteral *) blockObj;
+    if (!(block->flags & kLXBlockHasSignature) || !block->descriptor) {
+        return @"(no embedded signature)";
+    }
+    void **descriptorSlots = (void **) block->descriptor;
+    int signatureIndex = 2; // slot 0 = reserved, slot 1 = size (both unsigned long, pointer-sized on arm64)
+    if (block->flags & kLXBlockHasCopyDispose) {
+        signatureIndex += 2; // copy + dispose helper pointers
+    }
+    const char *signature = (const char *) descriptorSlots[signatureIndex];
+    return signature ? [NSString stringWithUTF8String: signature] : @"(null signature)";
+}
+
 static BOOL lx_ytmNameLooksPromising(const char *name) {
     NSString *lowered = [[NSString stringWithUTF8String: name] lowercaseString];
     NSArray<NSString *> *needles = @[@"like", @"dislike", @"rating", @"thumbsup", @"thumbdown", @"thumb", @"togglebutton", @"favorite", @"favourite"];
@@ -181,12 +219,17 @@ static void lx_ytmRunAllDebugScans(void) {
 // actually issues the network request from just a target (a simple video-id wrapper) and status
 // - no UI object in its signature at all - so this checks whether it's reachable independently.
 @interface YTLikeServiceImpl : NSObject
+- (id) initWithAccountID: (id) accountID;
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock;
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType responseBlock: (id) responseBlock errorBlock: (id) errorBlock;
 - (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 - (id) requestForDislikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 - (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 @end
+
+// Round 7: captured read-only, purely to confirm we CAN hold a live reference to the service
+// instance for a future write attempt - not used for anything yet.
+id lx_ytmLikeServiceInstance;
 
 %hook YTMLikeEndpointCommandImpl
 
@@ -289,9 +332,17 @@ static void lx_ytmRunAllDebugScans(void) {
 
 %hook YTLikeServiceImpl
 
+- (id) initWithAccountID: (id) accountID {
+    id result = %orig;
+    lx_ytmLikeServiceInstance = result;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTLikeServiceImpl initWithAccountID:%@ result=%@", accountID, result);
+    return result;
+}
+
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@",
-          (long) status, target, clickTrackingParams, queueContextParams, requestParams);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ responseBlockSig:%@ errorBlockSig:%@",
+          (long) status, target, clickTrackingParams, queueContextParams, requestParams,
+          lx_ytmBlockSignature(responseBlock), lx_ytmBlockSignature(errorBlock));
     %orig;
 }
 
@@ -299,8 +350,9 @@ static void lx_ytmRunAllDebugScans(void) {
 // requestForLikeWithTarget:... returns a requestDispatchType, so the real caller almost
 // certainly uses this 8-param overload instead - missed it in round 4's declaration.
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld",
-          (long) status, target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld responseBlockSig:%@ errorBlockSig:%@",
+          (long) status, target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType,
+          lx_ytmBlockSignature(responseBlock), lx_ytmBlockSignature(errorBlock));
     %orig;
 }
 
