@@ -119,14 +119,33 @@ static void lx_ytmRunAllDebugScans(void) {
     lx_ytmDebugDumpFinalistClasses();
 }
 
-// --- Round 2: read-only hooks on the most promising real classes found in round 1. These only
+// --- Rounds 2-3: read-only hooks on the most promising real classes found in round 1. These only
 // log (via %orig passthrough, never altering behaviour) so tapping like/dislike inside YTM's own
-// UI is completely safe and shows us the real live arguments. `likeStatus`-named parameters are
-// logged as a raw pointer/integer, never with %@, since we don't know yet whether the real type
-// is an object or a plain enum - dereferencing a non-object value via %@ could crash.
+// UI is completely safe and shows us the real live arguments. Round 2 confirmed
+// handleLikeActionWithCommand:entry:fromView:sender: fires with a heavy, UI-bound "entry" (an
+// ELMNodeController) - round 3 adds YTILikeButtonRenderer's class-side factory
+// (+likeButtonRendererWithVideoID:likeStatus:), which may let a future write path build a command
+// from just a video id instead. `likeStatus`-named parameters are logged as a raw pointer/integer,
+// never with %@, since we don't know yet whether the real type is an object or a plain enum -
+// dereferencing a non-object value via %@ could crash.
 
 @interface YTMLikeEndpointCommandImpl : NSObject
 - (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track;
+- (void) executeWithCommand: (id) command entry: (id) entry fromView: (id) fromView sender: (id) sender;
+- (void) updateEntityWithLikeStatus: (id) likeStatus videoID: (id) videoID;
+- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (id) revertOptimisticUpdate;
+@end
+
+// Round 1 found these on YTILikeButtonRenderer, the data model backing the visible like/dislike
+// button for whatever track/video is currently on screen. +likeButtonRendererWithVideoID:likeStatus:
+// looks like it can build one from just a video id, without needing any live UI object - if true,
+// that sidesteps the ELM-bound entry/fromView/sender objects entirely for the write path.
+@interface YTILikeButtonRenderer : NSObject
+- (id) likeStatus;
+- (id) endpointWithStatus: (id) status;
++ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (id) likeStatus;
++ (id) ytm_newLikeStatusFromLikeButtonTap: (id) currentStatus;
++ (id) ytm_newLikeStatusFromDislikeButtonTap: (id) currentStatus;
 @end
 
 @interface YTMLikeStatusDidChangeResponderEvent : NSObject
@@ -150,6 +169,59 @@ static void lx_ytmRunAllDebugScans(void) {
 - (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] toggleLikeStatusForTrackWithLikeEndpoint:%@ track:%@", likeEndpoint, track);
     %orig;
+}
+
+- (void) executeWithCommand: (id) command entry: (id) entry fromView: (id) fromView sender: (id) sender {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] executeWithCommand:%@ entry:%@ fromView:%@ sender:%@", command, entry, fromView, sender);
+    %orig;
+}
+
+- (void) updateEntityWithLikeStatus: (id) likeStatus videoID: (id) videoID {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeStatus(raw):%p videoID:%@", (__bridge void *) likeStatus, videoID);
+    %orig;
+}
+
+- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (id) revertOptimisticUpdate {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeEndpoint:%@ revertOptimisticUpdate(raw):%p", likeEndpoint, (__bridge void *) revertOptimisticUpdate);
+    %orig;
+}
+
+%end
+
+%hook YTILikeButtonRenderer
+
+- (id) likeStatus {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer likeStatus(raw)=%p self=%@", (__bridge void *) result, self);
+    return result;
+}
+
+- (id) endpointWithStatus: (id) status {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer endpointWithStatus(raw)=%p self=%@ result=%@",
+          (__bridge void *) status, self, result);
+    return result;
+}
+
++ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (id) likeStatus {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +likeButtonRendererWithVideoID:%@ likeStatus(raw)=%p result=%@",
+          videoID, (__bridge void *) likeStatus, result);
+    return result;
+}
+
++ (id) ytm_newLikeStatusFromLikeButtonTap: (id) currentStatus {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromLikeButtonTap currentStatus(raw)=%p newStatus(raw)=%p",
+          (__bridge void *) currentStatus, (__bridge void *) result);
+    return result;
+}
+
++ (id) ytm_newLikeStatusFromDislikeButtonTap: (id) currentStatus {
+    id result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromDislikeButtonTap currentStatus(raw)=%p newStatus(raw)=%p",
+          (__bridge void *) currentStatus, (__bridge void *) result);
+    return result;
 }
 
 %end
