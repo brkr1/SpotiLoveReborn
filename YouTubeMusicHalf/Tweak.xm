@@ -227,9 +227,24 @@ static void lx_ytmRunAllDebugScans(void) {
 - (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType;
 @end
 
-// Round 7: captured read-only, purely to confirm we CAN hold a live reference to the service
-// instance for a future write attempt - not used for anything yet.
+// Round 7: captured from inside makeRequestWithStatus:... (more reliable than
+// initWithAccountID:, which never fired live - the singleton is likely built before our hooks
+// install) so we can reuse the same live service instance for our own write attempt.
 id lx_ytmLikeServiceInstance;
+
+// Round 8 (first real write attempt): cached from the read hooks below, which already fire
+// during ordinary playback as YTM renders its own like/dislike button. Single-slot, last-seen
+// only - not yet keyed by video id, so if the user browses a list with other tracks' like
+// buttons while a different track plays, this could go stale and target the wrong track. A
+// later hardening pass should key this by the actual now-playing video id, the same way
+// NextUp3's YTQueueController.playbackQueueItems[nowPlayingIndex] already does in this exact
+// process (see Fontes/NextUp3-main/NUYouTubeShared.h) - not done yet to keep this round's scope
+// to validating the write call itself.
+id lx_ytmCachedLikeTarget;
+id lx_ytmCachedClickTrackingParams;
+id lx_ytmCachedLikeRequestParams;       // requestParams that sets status to LIKE (0)
+id lx_ytmCachedRemoveLikeRequestParams; // requestParams that sets status to INDIFFERENT (2)
+NSInteger lx_ytmCachedCurrentLikeStatus = -1; // -1 = unknown/nothing observed yet
 
 %hook YTMLikeEndpointCommandImpl
 
@@ -259,6 +274,7 @@ id lx_ytmLikeServiceInstance;
 
 - (NSInteger) likeStatus {
     NSInteger result = %orig;
+    lx_ytmCachedCurrentLikeStatus = result;
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer likeStatus(raw)=%ld self=%@", (long) result, self);
     return result;
 }
@@ -350,6 +366,7 @@ id lx_ytmLikeServiceInstance;
 // requestForLikeWithTarget:... returns a requestDispatchType, so the real caller almost
 // certainly uses this 8-param overload instead - missed it in round 4's declaration.
 - (void) makeRequestWithStatus: (NSInteger) status target: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType responseBlock: (id) responseBlock errorBlock: (id) errorBlock {
+    lx_ytmLikeServiceInstance = self;
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] makeRequestWithStatus(raw):%ld target:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld responseBlockSig:%@ errorBlockSig:%@",
           (long) status, target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType,
           lx_ytmBlockSignature(responseBlock), lx_ytmBlockSignature(errorBlock));
@@ -358,6 +375,9 @@ id lx_ytmLikeServiceInstance;
 
 - (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
     id result = %orig;
+    lx_ytmCachedLikeTarget = target;
+    lx_ytmCachedClickTrackingParams = clickTrackingParams;
+    lx_ytmCachedLikeRequestParams = requestParams;
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] requestForLikeWithTarget:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld result:%@",
           target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType, result);
     return result;
@@ -372,6 +392,9 @@ id lx_ytmLikeServiceInstance;
 
 - (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
     id result = %orig;
+    lx_ytmCachedLikeTarget = target;
+    lx_ytmCachedClickTrackingParams = clickTrackingParams;
+    lx_ytmCachedRemoveLikeRequestParams = requestParams;
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] requestForRemoveLikeWithTarget:%@ clickTrackingParams:%@ queueContextParams:%@ requestParams:%@ requestDispatchType(raw):%ld result:%@",
           target, clickTrackingParams, queueContextParams, requestParams, (long) requestDispatchType, result);
     return result;
@@ -380,10 +403,50 @@ id lx_ytmLikeServiceInstance;
 %end
 
 void lx_handleLikeToggleNotificationYouTubeMusic() {
-    // Not yet implemented: the real like/dislike API for YouTube Music isn't known yet.
-    // Once the hooks above show us real live arguments, this becomes a real toggle call,
-    // mirroring SpotifyHalf/Tweak.xm's lx_handleLikeToggleNotification.
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle notification received, but no hook wired up yet");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!lx_ytmLikeServiceInstance || !lx_ytmCachedLikeTarget) {
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: nothing cached yet (play a track and let its like button render at least once first), skipping");
+            return;
+        }
+
+        BOOL isCurrentlyLiked = (lx_ytmCachedCurrentLikeStatus == 0); // 0 = LIKE, confirmed via round 6/7 correlation
+        NSInteger targetStatus = isCurrentlyLiked ? 2 /* INDIFFERENT */ : 0 /* LIKE */;
+        id requestParams = isCurrentlyLiked ? lx_ytmCachedRemoveLikeRequestParams : lx_ytmCachedLikeRequestParams;
+        if (!requestParams) {
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: no cached requestParams for target status %ld yet, skipping", (long) targetStatus);
+            return;
+        }
+
+        // Signatures confirmed by reading the blocks' own compiler-embedded type encoding
+        // (round 7): responseBlock is void(^)(YTILikeResponse *, BOOL), errorBlock is
+        // void(^)(NSError *). Declaring `id` for the object params is safe here since both are
+        // confirmed real objects, unlike the likeStatus/status enums elsewhere in this file.
+        void (^responseBlock)(id, BOOL) = ^(id response, BOOL flag) {
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: response=%@ flag=%d", response, flag);
+        };
+        void (^errorBlock)(id) = ^(id error) {
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: error=%@", error);
+        };
+
+        @try {
+            [lx_ytmLikeServiceInstance makeRequestWithStatus: targetStatus
+                                                       target: lx_ytmCachedLikeTarget
+                                         clickTrackingParams: lx_ytmCachedClickTrackingParams
+                                          queueContextParams: nil
+                                               requestParams: requestParams
+                                         requestDispatchType: 1
+                                               responseBlock: responseBlock
+                                                  errorBlock: errorBlock];
+            // Optimistic, matching YTM's own YTMLikeActionOptimisticHandlerImpl naming/behavior -
+            // flip the cached status and report it immediately rather than waiting on the
+            // network response, so the heart updates right away.
+            lx_ytmCachedCurrentLikeStatus = targetStatus;
+            lx_setLikedStateYouTubeMusic(targetStatus == 0);
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: sent makeRequestWithStatus:%ld", (long) targetStatus);
+        } @catch (NSException *e) {
+            NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle: caught %@: %@", e.name, e.reason);
+        }
+    });
 }
 
 %ctor {
