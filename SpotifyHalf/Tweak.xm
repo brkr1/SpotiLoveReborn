@@ -49,7 +49,6 @@ static void lx_reportCurrentLikedState(void) {
     playbackSpeedUIPresenter: (id) playbackSpeedUIPresenter
              contextMenuService: (id) contextMenuService
        podcastContextMenuProvider: (id) podcastContextMenuProvider
-                nowPlayingManager: (id) nowPlayingManager
                    linkDispatcher: (id) linkDispatcher
                      modeResolver: (id) modeResolver
                            logger: (id) logger
