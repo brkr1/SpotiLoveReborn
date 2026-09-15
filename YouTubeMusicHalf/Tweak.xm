@@ -158,7 +158,7 @@ static void lx_ytmRunAllDebugScans(void) {
 
 - (id) initWithLikeStatus: (id) likeStatus firstResponder: (id) firstResponder {
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMLikeStatusDidChangeResponderEvent likeStatus(raw)=%p firstResponderClass=%@",
-          (void *) likeStatus, firstResponder ? NSStringFromClass([firstResponder class]) : @"(nil)");
+          (__bridge void *) likeStatus, firstResponder ? NSStringFromClass([firstResponder class]) : @"(nil)");
     return %orig;
 }
 
@@ -167,7 +167,7 @@ static void lx_ytmRunAllDebugScans(void) {
 %hook YTMCarPlayLikeStatusHolder
 
 - (id) initWithIdentifier: (id) identifier likeStatus: (id) likeStatus {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMCarPlayLikeStatusHolder identifier=%@ likeStatus(raw)=%p", identifier, (void *) likeStatus);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMCarPlayLikeStatusHolder identifier=%@ likeStatus(raw)=%p", identifier, (__bridge void *) likeStatus);
     return %orig;
 }
 
