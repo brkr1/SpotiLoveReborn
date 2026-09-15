@@ -1,5 +1,6 @@
 #import "../Shared.h"
 #import <objc/runtime.h>
+#include <string.h>
 
 static BOOL lx_ytmNameLooksPromising(const char *name) {
     NSString *lowered = [[NSString stringWithUTF8String: name] lowercaseString];
@@ -15,7 +16,9 @@ static BOOL lx_ytmNameLooksPromising(const char *name) {
 // TODO(debug): remove once the real like/dislike hook for YouTube Music is confirmed working.
 // No private-header dump exists for YTM's like API (unlike Spotify's), so this scans every
 // loaded class for a plausible name and dumps its instance methods - the same discovery
-// approach that found the broken Spotify init signature.
+// approach that found the broken Spotify init signature. Round 1 result: found real classes
+// (YTMLikeEndpointCommandImpl, YTMLikeStatusDidChangeResponderEvent, YTMCarPlayLikeStatusHolder,
+// etc), so round 2 (below) hooks the most promising ones read-only to see live call arguments.
 static void lx_ytmDebugScanForLikeClasses(void) {
     unsigned int classCount = 0;
     Class *classes = objc_copyClassList(&classCount);
@@ -36,22 +39,174 @@ static void lx_ytmDebugScanForLikeClasses(void) {
     free(classes);
 }
 
+static BOOL lx_ytmSelectorLooksPromising(SEL sel) {
+    const char *name = sel_getName(sel);
+    static const char *needles[] = {"like", "dislike", "rating", "thumbup", "thumbdown", "thumbsup", "thumbsdown", "favorite", "favourite"};
+    for (size_t i = 0; i < sizeof(needles) / sizeof(needles[0]); i++) {
+        if (strcasestr(name, needles[i])) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// Round 1 only matched classes whose OWN name contains a needle. The actual view/controller
+// that owns the visible like/dislike button may reuse a generic class name (YTM's player bar
+// reuses button/controller classes across actions) with only its *method* naming the action, so
+// this instead scans every method of every loaded class by selector name.
+static void lx_ytmDebugScanAllMethodsForLikeSelectors(void) {
+    unsigned int classCount = 0;
+    Class *classes = objc_copyClassList(&classCount);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][SEL] scanning methods of %u classes for like/rating selectors", classCount);
+    for (unsigned int i = 0; i < classCount; i++) {
+        unsigned int methodCount = 0;
+        Method *methods = class_copyMethodList(classes[i], &methodCount);
+        for (unsigned int j = 0; j < methodCount; j++) {
+            SEL sel = method_getName(methods[j]);
+            if (lx_ytmSelectorLooksPromising(sel)) {
+                NSLog(@"[SpotiLoveReborn][YTM-DEBUG][SEL] %s -%s", class_getName(classes[i]), sel_getName(sel));
+            }
+        }
+        free(methods);
+    }
+    free(classes);
+}
+
+// Round 1 only dumped INSTANCE methods, missing any class-side factory methods (e.g. a
+// +notificationWith... constructor for YTMLikeModificationNotificationData, mirroring
+// YTQueueModificationNotificationData's +addToQueueNotificationWithQueueItems:... in NextUp3).
+static void lx_ytmDebugDumpClassAndInstanceMethods(const char *className) {
+    Class cls = objc_getClass(className);
+    if (!cls) {
+        NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL] %s not found", className);
+        return;
+    }
+    unsigned int count = 0;
+    Method *instanceMethods = class_copyMethodList(cls, &count);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL] %s instance methods:", className);
+    for (unsigned int i = 0; i < count; i++) {
+        NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL]   - %@", NSStringFromSelector(method_getName(instanceMethods[i])));
+    }
+    free(instanceMethods);
+
+    Method *classMethods = class_copyMethodList(object_getClass(cls), &count);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL] %s class methods:", className);
+    for (unsigned int i = 0; i < count; i++) {
+        NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL]   + %@", NSStringFromSelector(method_getName(classMethods[i])));
+    }
+    free(classMethods);
+}
+
+static void lx_ytmDebugDumpFinalistClasses(void) {
+    static const char *finalists[] = {
+        "YTMLikeModificationNotificationData",
+        "YTILikeButtonRenderer",
+        "YTLikeServiceImpl",
+        "YTMLikeEndpointCommandImpl",
+        "YTMCarPlayLikeStatusHolder",
+        "YTMLikeStatusDidChangeResponderEvent",
+        "YTMLikeActionOptimisticHandlerImpl",
+        "YTMLikeResponseHandlerImpl",
+    };
+    for (size_t i = 0; i < sizeof(finalists) / sizeof(finalists[0]); i++) {
+        lx_ytmDebugDumpClassAndInstanceMethods(finalists[i]);
+    }
+}
+
+static void lx_ytmRunAllDebugScans(void) {
+    lx_ytmDebugScanForLikeClasses();
+    lx_ytmDebugScanAllMethodsForLikeSelectors();
+    lx_ytmDebugDumpFinalistClasses();
+}
+
+// --- Round 2: read-only hooks on the most promising real classes found in round 1. These only
+// log (via %orig passthrough, never altering behaviour) so tapping like/dislike inside YTM's own
+// UI is completely safe and shows us the real live arguments. `likeStatus`-named parameters are
+// logged as a raw pointer/integer, never with %@, since we don't know yet whether the real type
+// is an object or a plain enum - dereferencing a non-object value via %@ could crash.
+
+@interface YTMLikeEndpointCommandImpl : NSObject
+- (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track;
+@end
+
+@interface YTMLikeStatusDidChangeResponderEvent : NSObject
+- (id) initWithLikeStatus: (id) likeStatus firstResponder: (id) firstResponder;
+@end
+
+@interface YTMCarPlayLikeStatusHolder : NSObject
+- (id) initWithIdentifier: (id) identifier likeStatus: (id) likeStatus;
+@end
+
+@interface YTMLikeActionOptimisticHandlerImpl : NSObject
+- (void) handleLikeActionWithCommand: (id) command entry: (id) entry fromView: (id) fromView sender: (id) sender;
+@end
+
+@interface YTMLikeResponseHandlerImpl : NSObject
+- (void) setLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track;
+@end
+
+%hook YTMLikeEndpointCommandImpl
+
+- (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] toggleLikeStatusForTrackWithLikeEndpoint:%@ track:%@", likeEndpoint, track);
+    %orig;
+}
+
+%end
+
+%hook YTMLikeStatusDidChangeResponderEvent
+
+- (id) initWithLikeStatus: (id) likeStatus firstResponder: (id) firstResponder {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMLikeStatusDidChangeResponderEvent likeStatus(raw)=%p firstResponderClass=%@",
+          (void *) likeStatus, firstResponder ? NSStringFromClass([firstResponder class]) : @"(nil)");
+    return %orig;
+}
+
+%end
+
+%hook YTMCarPlayLikeStatusHolder
+
+- (id) initWithIdentifier: (id) identifier likeStatus: (id) likeStatus {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMCarPlayLikeStatusHolder identifier=%@ likeStatus(raw)=%p", identifier, (void *) likeStatus);
+    return %orig;
+}
+
+%end
+
+%hook YTMLikeActionOptimisticHandlerImpl
+
+- (void) handleLikeActionWithCommand: (id) command entry: (id) entry fromView: (id) fromView sender: (id) sender {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] handleLikeActionWithCommand:%@ entry:%@ fromView:%@ sender:%@", command, entry, fromView, sender);
+    %orig;
+}
+
+%end
+
+%hook YTMLikeResponseHandlerImpl
+
+- (void) setLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] setLikeStatusForTrackWithLikeEndpoint:%@ track:%@", likeEndpoint, track);
+    %orig;
+}
+
+%end
+
 void lx_handleLikeToggleNotificationYouTubeMusic() {
     // Not yet implemented: the real like/dislike API for YouTube Music isn't known yet.
-    // Once the class scan above identifies it, this becomes a real toggle call, mirroring
-    // SpotifyHalf/Tweak.xm's lx_handleLikeToggleNotification.
+    // Once the hooks above show us real live arguments, this becomes a real toggle call,
+    // mirroring SpotifyHalf/Tweak.xm's lx_handleLikeToggleNotification.
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG] toggle notification received, but no hook wired up yet");
 }
 
 %ctor {
-    lx_ytmDebugScanForLikeClasses();
+    lx_ytmRunAllDebugScans();
 
     // Some of YTM's classes may only get registered once its player UI is actually built,
     // so rescan a few times after launch instead of relying on the ctor-time snapshot alone.
     NSArray<NSNumber *> *delays = @[@5.0, @15.0, @30.0];
     for (NSNumber *delay in delays) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([delay doubleValue] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            lx_ytmDebugScanForLikeClasses();
+            lx_ytmRunAllDebugScans();
         });
     }
 
