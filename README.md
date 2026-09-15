@@ -17,7 +17,7 @@ Tapping the heart triggers the exact same native "toggle Liked Songs" action Spo
 
 - iPhone 14 Pro Max 16.6.1 roothide Bootstrap
 - iPhone 15 iOS 17.0
-- Spotify (eevee) 9.1.0
+- From Spotify (eevee) 9.1.0 up until 9.1.82
 
 ## Installation
 
