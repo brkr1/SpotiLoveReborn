@@ -64,13 +64,17 @@ static BOOL lx_mruLikedStateForCurrentSource(void) {
     }
 }
 
+// TODO(debug): remove once multi-app source routing is confirmed working for YouTube Music.
 static void lx_mruPostLikeToggleForCurrentSource(void) {
     NSString *name;
     switch (lx_mruCurrentSource) {
         case LXMusicSourceSpotify: name = kLikeToggleDarwinNotification; break;
         case LXMusicSourceYouTubeMusic: name = kLikeToggleDarwinNotificationYouTubeMusic; break;
-        default: return;
+        default:
+            NSLog(@"[SpotiLoveReborn][MRU-DEBUG] heart tapped but lx_mruCurrentSource=%ld (unknown), not posting anything", (long) lx_mruCurrentSource);
+            return;
     }
+    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] heart tapped, posting toggle for source=%ld", (long) lx_mruCurrentSource);
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge CFStringRef) name,

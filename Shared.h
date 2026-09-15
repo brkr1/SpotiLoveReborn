@@ -96,9 +96,11 @@ static inline LXMusicSource lx_sourceForBundleID(NSString *bundleID) {
 // into *outSource, calling onChange() if it moved to a different app. Never blocks the calling
 // thread (MRMediaRemoteGetNowPlayingClient's callback lands on dispatch_get_main_queue(), so a
 // synchronous wait here from the main thread would deadlock).
+// TODO(debug): remove once multi-app source routing is confirmed working for YouTube Music.
 static inline void lx_refreshNowPlayingSource(LXMusicSource *outSource, dispatch_block_t onChange) {
     void *handle = lx_mediaRemoteHandle();
     if (!handle) {
+        NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_refreshNowPlayingSource: MediaRemote dlopen failed");
         return;
     }
     void (*getClient)(dispatch_queue_t, void (^)(id)) =
@@ -106,6 +108,8 @@ static inline void lx_refreshNowPlayingSource(LXMusicSource *outSource, dispatch
     NSString *(*getBundleID)(id) = (NSString *(*)(id)) dlsym(handle, "MRNowPlayingClientGetBundleIdentifier");
     NSString *(*getParentBundleID)(id) = (NSString *(*)(id)) dlsym(handle, "MRNowPlayingClientGetParentAppBundleIdentifier");
     if (!getClient || (!getBundleID && !getParentBundleID)) {
+        NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_refreshNowPlayingSource: symbols missing getClient=%p getBundleID=%p getParentBundleID=%p",
+              (void *) getClient, (void *) getBundleID, (void *) getParentBundleID);
         return;
     }
 
@@ -115,6 +119,8 @@ static inline void lx_refreshNowPlayingSource(LXMusicSource *outSource, dispatch
             bundleID = getParentBundleID(client);
         }
         LXMusicSource newSource = lx_sourceForBundleID(bundleID);
+        NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_refreshNowPlayingSource: client=%@ bundleID=%@ resolvedSource=%ld (was %ld)",
+              client, bundleID, (long) newSource, (long) *outSource);
         if (newSource != *outSource) {
             *outSource = newSource;
             if (onChange) {
