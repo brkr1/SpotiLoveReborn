@@ -129,11 +129,16 @@ static void lx_ytmRunAllDebugScans(void) {
 // never with %@, since we don't know yet whether the real type is an object or a plain enum -
 // dereferencing a non-object value via %@ could crash.
 
+// The crash from the previous round confirms it: likeStatus/status parameters are a plain
+// NSInteger-sized enum, not an object (objc_retain crashed trying to retain the raw value 2).
+// Declaring them as `id` made ARC implicitly retain that garbage pointer on method entry, before
+// any of our code even ran. Every likeStatus/status here is NSInteger now - never id.
+
 @interface YTMLikeEndpointCommandImpl : NSObject
 - (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track;
 - (void) executeWithCommand: (id) command entry: (id) entry fromView: (id) fromView sender: (id) sender;
-- (void) updateEntityWithLikeStatus: (id) likeStatus videoID: (id) videoID;
-- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (id) revertOptimisticUpdate;
+- (void) updateEntityWithLikeStatus: (NSInteger) likeStatus videoID: (id) videoID;
+- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (BOOL) revertOptimisticUpdate;
 @end
 
 // Round 1 found these on YTILikeButtonRenderer, the data model backing the visible like/dislike
@@ -141,19 +146,19 @@ static void lx_ytmRunAllDebugScans(void) {
 // looks like it can build one from just a video id, without needing any live UI object - if true,
 // that sidesteps the ELM-bound entry/fromView/sender objects entirely for the write path.
 @interface YTILikeButtonRenderer : NSObject
-- (id) likeStatus;
-- (id) endpointWithStatus: (id) status;
-+ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (id) likeStatus;
-+ (id) ytm_newLikeStatusFromLikeButtonTap: (id) currentStatus;
-+ (id) ytm_newLikeStatusFromDislikeButtonTap: (id) currentStatus;
+- (NSInteger) likeStatus;
+- (id) endpointWithStatus: (NSInteger) status;
++ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (NSInteger) likeStatus;
++ (NSInteger) ytm_newLikeStatusFromLikeButtonTap: (NSInteger) currentStatus;
++ (NSInteger) ytm_newLikeStatusFromDislikeButtonTap: (NSInteger) currentStatus;
 @end
 
 @interface YTMLikeStatusDidChangeResponderEvent : NSObject
-- (id) initWithLikeStatus: (id) likeStatus firstResponder: (id) firstResponder;
+- (id) initWithLikeStatus: (NSInteger) likeStatus firstResponder: (id) firstResponder;
 @end
 
 @interface YTMCarPlayLikeStatusHolder : NSObject
-- (id) initWithIdentifier: (id) identifier likeStatus: (id) likeStatus;
+- (id) initWithIdentifier: (id) identifier likeStatus: (NSInteger) likeStatus;
 @end
 
 @interface YTMLikeActionOptimisticHandlerImpl : NSObject
@@ -176,13 +181,13 @@ static void lx_ytmRunAllDebugScans(void) {
     %orig;
 }
 
-- (void) updateEntityWithLikeStatus: (id) likeStatus videoID: (id) videoID {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeStatus(raw):%p videoID:%@", (__bridge void *) likeStatus, videoID);
+- (void) updateEntityWithLikeStatus: (NSInteger) likeStatus videoID: (id) videoID {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeStatus(raw):%ld videoID:%@", (long) likeStatus, videoID);
     %orig;
 }
 
-- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (id) revertOptimisticUpdate {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeEndpoint:%@ revertOptimisticUpdate(raw):%p", likeEndpoint, (__bridge void *) revertOptimisticUpdate);
+- (void) updateEntityWithLikeEndpoint: (id) likeEndpoint revertOptimisticUpdate: (BOOL) revertOptimisticUpdate {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] updateEntityWithLikeEndpoint:%@ revertOptimisticUpdate:%d", likeEndpoint, revertOptimisticUpdate);
     %orig;
 }
 
@@ -190,37 +195,37 @@ static void lx_ytmRunAllDebugScans(void) {
 
 %hook YTILikeButtonRenderer
 
-- (id) likeStatus {
-    id result = %orig;
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer likeStatus(raw)=%p self=%@", (__bridge void *) result, self);
+- (NSInteger) likeStatus {
+    NSInteger result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer likeStatus(raw)=%ld self=%@", (long) result, self);
     return result;
 }
 
-- (id) endpointWithStatus: (id) status {
+- (id) endpointWithStatus: (NSInteger) status {
     id result = %orig;
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer endpointWithStatus(raw)=%p self=%@ result=%@",
-          (__bridge void *) status, self, result);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer endpointWithStatus(raw)=%ld self=%@ result=%@",
+          (long) status, self, result);
     return result;
 }
 
-+ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (id) likeStatus {
++ (id) likeButtonRendererWithVideoID: (id) videoID likeStatus: (NSInteger) likeStatus {
     id result = %orig;
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +likeButtonRendererWithVideoID:%@ likeStatus(raw)=%p result=%@",
-          videoID, (__bridge void *) likeStatus, result);
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +likeButtonRendererWithVideoID:%@ likeStatus(raw)=%ld result=%@",
+          videoID, (long) likeStatus, result);
     return result;
 }
 
-+ (id) ytm_newLikeStatusFromLikeButtonTap: (id) currentStatus {
-    id result = %orig;
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromLikeButtonTap currentStatus(raw)=%p newStatus(raw)=%p",
-          (__bridge void *) currentStatus, (__bridge void *) result);
++ (NSInteger) ytm_newLikeStatusFromLikeButtonTap: (NSInteger) currentStatus {
+    NSInteger result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromLikeButtonTap currentStatus(raw)=%ld newStatus(raw)=%ld",
+          (long) currentStatus, (long) result);
     return result;
 }
 
-+ (id) ytm_newLikeStatusFromDislikeButtonTap: (id) currentStatus {
-    id result = %orig;
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromDislikeButtonTap currentStatus(raw)=%p newStatus(raw)=%p",
-          (__bridge void *) currentStatus, (__bridge void *) result);
++ (NSInteger) ytm_newLikeStatusFromDislikeButtonTap: (NSInteger) currentStatus {
+    NSInteger result = %orig;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] +ytm_newLikeStatusFromDislikeButtonTap currentStatus(raw)=%ld newStatus(raw)=%ld",
+          (long) currentStatus, (long) result);
     return result;
 }
 
@@ -228,9 +233,9 @@ static void lx_ytmRunAllDebugScans(void) {
 
 %hook YTMLikeStatusDidChangeResponderEvent
 
-- (id) initWithLikeStatus: (id) likeStatus firstResponder: (id) firstResponder {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMLikeStatusDidChangeResponderEvent likeStatus(raw)=%p firstResponderClass=%@",
-          (__bridge void *) likeStatus, firstResponder ? NSStringFromClass([firstResponder class]) : @"(nil)");
+- (id) initWithLikeStatus: (NSInteger) likeStatus firstResponder: (id) firstResponder {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMLikeStatusDidChangeResponderEvent likeStatus(raw)=%ld firstResponderClass=%@",
+          (long) likeStatus, firstResponder ? NSStringFromClass([firstResponder class]) : @"(nil)");
     return %orig;
 }
 
@@ -238,8 +243,8 @@ static void lx_ytmRunAllDebugScans(void) {
 
 %hook YTMCarPlayLikeStatusHolder
 
-- (id) initWithIdentifier: (id) identifier likeStatus: (id) likeStatus {
-    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMCarPlayLikeStatusHolder identifier=%@ likeStatus(raw)=%p", identifier, (__bridge void *) likeStatus);
+- (id) initWithIdentifier: (id) identifier likeStatus: (NSInteger) likeStatus {
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTMCarPlayLikeStatusHolder identifier=%@ likeStatus(raw)=%ld", identifier, (long) likeStatus);
     return %orig;
 }
 
@@ -271,16 +276,21 @@ void lx_handleLikeToggleNotificationYouTubeMusic() {
 }
 
 %ctor {
-    lx_ytmRunAllDebugScans();
-
-    // Some of YTM's classes may only get registered once its player UI is actually built,
-    // so rescan a few times after launch instead of relying on the ctor-time snapshot alone.
-    NSArray<NSNumber *> *delays = @[@5.0, @15.0, @30.0];
-    for (NSNumber *delay in delays) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([delay doubleValue] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // The class/selector scans walk ~90k loaded classes - expensive, and round 2's log showed
+    // it running 7 times concurrently (7 near-simultaneous "scanning..." lines within 130us of
+    // each other), almost certainly from this ctor firing more than once. Running that on the
+    // main thread, possibly several times at once, right at cold launch risks a launch watchdog
+    // kill on its own. dispatch_once guards against repeat runs, and everything now runs off the
+    // main queue so it can never block YTM's own launch/UI work. One pass only now - rounds 1-2
+    // already captured the class/method data we needed; this round only adds the read-only hooks
+    // below, which cost nothing until YTM itself calls the hooked methods.
+    static dispatch_once_t debugScanOnceToken;
+    dispatch_once(&debugScanOnceToken, ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                        dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             lx_ytmRunAllDebugScans();
         });
-    }
+    });
 
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
