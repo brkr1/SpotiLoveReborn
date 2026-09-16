@@ -23,6 +23,29 @@
 
 static const long long kLXLockScreenContext = 2;
 
+// TODO(debug): remove once we've identified the real Control Center card view/window.
+// A screenshot showed no heart at all in the (much taller) real Control Center card, while
+// our own logs showed a valid-looking 401x160 view passing this check - strong evidence that
+// what we've been hooking is some OTHER 401x160 surface (likely the lock screen's own compact
+// platter, which also reports context==2) rather than Control Center's real card. This walks
+// the full ancestor chain so we can see it directly instead of inferring from a boolean.
+static void lx_debugLogAncestorChain(UIViewController *vc) {
+    NSMutableString *chain = [NSMutableString string];
+    for (UIViewController *ancestor = vc; ancestor; ancestor = ancestor.parentViewController) {
+        [chain appendFormat: @"%@ <- ", NSStringFromClass([ancestor class])];
+    }
+    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] ancestor chain: %@", chain);
+}
+
+// TODO(debug): remove once we've identified the real Control Center card view/window.
+static void lx_debugLogAllWindows(void) {
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        NSLog(@"[SpotiLoveReborn][MRU-DEBUG] window: %@ class=%@ frame=%@ hidden=%d rootVC=%@",
+              window, NSStringFromClass([window class]), NSStringFromCGRect(window.frame), window.hidden,
+              NSStringFromClass([window.rootViewController class]));
+    }
+}
+
 static MRUNowPlayingViewController *lx_owningNowPlayingVC(UIView *view) {
     Class vcClass = objc_getClass("MRUNowPlayingViewController");
     if (!vcClass) {
@@ -152,6 +175,16 @@ void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
     BOOL supported = lx_isSupportedNowPlayingContext(owningVC);
     NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_ensureMRUHeartButton: playerView=%@ owningVC=%@ context=%lld supported=%d",
           playerView, owningVC, owningVC.context, supported);
+    lx_debugLogAncestorChain(owningVC);
+
+    // Throttled - layoutSubviews fires many times per second during animations, and dumping
+    // every window on every call would flood the log without adding anything new each time.
+    static CFAbsoluteTime lastWindowDumpTime = 0;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (now - lastWindowDumpTime > 2.0) {
+        lastWindowDumpTime = now;
+        lx_debugLogAllWindows();
+    }
 
     if (!supported) {
         if (lx_mruHeartButton && lx_mruHeartButton.superview == playerView) {
