@@ -199,6 +199,23 @@ static void lx_ytmDebugDumpClassAndInstanceMethods(const char *className) {
     free(classMethods);
 }
 
+// Round 9's YTILikeEndpoint dump (via lx_ytmDebugDumpFinalistClasses, running 3s after %ctor)
+// came back empty - it's a lazily-resolved protobuf class whose accessors only materialize once
+// something actually calls them. requestForLikeWithTarget:/requestForRemoveLikeWithTarget:'s own
+// implementation must extract target/requestParams from some YTILikeEndpoint right before
+// calling %orig, which should have JUST materialized those real accessor methods on the class
+// (materialization is per-CLASS, so it doesn't matter that it's a different instance than the
+// one we have cached) - re-dump once, right there, to catch the real names this time.
+static void lx_ytmMaybeRedumpLikeEndpointOnce(void) {
+    static BOOL done = NO;
+    if (done) {
+        return;
+    }
+    done = YES;
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][FULL] re-dumping YTILikeEndpoint now that a real request has been built:");
+    lx_ytmDebugDumpClassAndInstanceMethods("YTILikeEndpoint");
+}
+
 static void lx_ytmDebugDumpFinalistClasses(void) {
     static const char *finalists[] = {
         "YTMLikeModificationNotificationData",
@@ -462,6 +479,7 @@ id lx_ytmCachedLikeEndpointForRemoveLike;
 
 - (id) requestForLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
     id result = %orig;
+    lx_ytmMaybeRedumpLikeEndpointOnce();
     lx_ytmCachedLikeTarget = target;
     lx_ytmCachedClickTrackingParams = clickTrackingParams;
     lx_ytmCachedLikeRequestParams = requestParams;
@@ -479,6 +497,7 @@ id lx_ytmCachedLikeEndpointForRemoveLike;
 
 - (id) requestForRemoveLikeWithTarget: (id) target clickTrackingParams: (id) clickTrackingParams queueContextParams: (id) queueContextParams requestParams: (id) requestParams requestDispatchType: (NSInteger) requestDispatchType {
     id result = %orig;
+    lx_ytmMaybeRedumpLikeEndpointOnce();
     lx_ytmCachedLikeTarget = target;
     lx_ytmCachedClickTrackingParams = clickTrackingParams;
     lx_ytmCachedRemoveLikeRequestParams = requestParams;
