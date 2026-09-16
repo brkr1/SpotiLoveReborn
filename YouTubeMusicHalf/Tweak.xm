@@ -40,6 +40,70 @@ static NSString *lx_ytmBlockSignature(id blockObj) {
     return signature ? [NSString stringWithUTF8String: signature] : @"(null signature)";
 }
 
+// YTILikeEndpoint never showed any methods in the class dump (round 9) - it's one of the
+// lazily-resolved protobuf message classes (same as YTMXSetCurrentLikeStatusRequest, etc):
+// class_copyMethodList only lists methods already materialized, and the real accessors don't
+// get added until something actually calls them. Since we can't introspect real names, this
+// probes the property names this codebase's convention would predict (snake_case field ->
+// camelCase accessor, same pattern confirmed for YTIPlaylistPanelVideoRenderer.videoId in
+// Fontes/NextUp3-main/NUYouTubeShared.h).
+//
+// Calling via plain [target performSelector:sel] would be exactly the round 6/7 ARC-retain
+// crash again: performSelector: is declared to return `id`, so ARC retains whatever comes back
+// as if it were a real object - if the guessed accessor turns out to return a bare NSInteger
+// (like status almost certainly does, matching likeStatus elsewhere in this file), that crashes
+// objc_retain on a non-pointer value. NSInvocation reads -methodSignatureForSelector:'s REAL
+// return type encoding first and decodes the result accordingly, so a wrong guess or a
+// non-object return degrades to a logged message instead of a crash.
+static NSString *lx_ytmSafeInvokeDescribe(id target, SEL sel) {
+    if (!target || ![target respondsToSelector: sel]) {
+        return @"(no such selector)";
+    }
+    @try {
+        NSMethodSignature *signature = [target methodSignatureForSelector: sel];
+        if (!signature) {
+            return @"(no signature)";
+        }
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature: signature];
+        invocation.selector = sel;
+        invocation.target = target;
+        [invocation invoke];
+
+        const char *returnType = signature.methodReturnType;
+        if (strcmp(returnType, @encode(id)) == 0 || strcmp(returnType, @encode(Class)) == 0) {
+            __unsafe_unretained id objectResult = nil;
+            [invocation getReturnValue: &objectResult];
+            return [NSString stringWithFormat: @"%@", objectResult];
+        }
+        if (strcmp(returnType, @encode(NSInteger)) == 0) {
+            NSInteger integerResult = 0;
+            [invocation getReturnValue: &integerResult];
+            return [NSString stringWithFormat: @"(NSInteger) %ld", (long) integerResult];
+        }
+        if (strcmp(returnType, @encode(BOOL)) == 0) {
+            BOOL boolResult = NO;
+            [invocation getReturnValue: &boolResult];
+            return [NSString stringWithFormat: @"(BOOL) %d", boolResult];
+        }
+        return [NSString stringWithFormat: @"(unhandled return type '%s')", returnType];
+    } @catch (NSException *e) {
+        return [NSString stringWithFormat: @"(threw %@: %@)", e.name, e.reason];
+    }
+}
+
+static void lx_ytmDebugProbeLikeEndpointFields(id endpoint, const char *label) {
+    if (!endpoint) {
+        NSLog(@"[SpotiLoveReborn][YTM-DEBUG][ENDPOINT] %s: nil", label);
+        return;
+    }
+    NSLog(@"[SpotiLoveReborn][YTM-DEBUG][ENDPOINT] %s: target=%@ likeParams=%@ removeLikeParams=%@ status=%@",
+          label,
+          lx_ytmSafeInvokeDescribe(endpoint, @selector(target)),
+          lx_ytmSafeInvokeDescribe(endpoint, @selector(likeParams)),
+          lx_ytmSafeInvokeDescribe(endpoint, @selector(removeLikeParams)),
+          lx_ytmSafeInvokeDescribe(endpoint, @selector(status)));
+}
+
 static BOOL lx_ytmNameLooksPromising(const char *name) {
     NSString *lowered = [[NSString stringWithUTF8String: name] lowercaseString];
     NSArray<NSString *> *needles = @[@"like", @"dislike", @"rating", @"thumbsup", @"thumbdown", @"thumb", @"togglebutton", @"favorite", @"favourite"];
@@ -305,6 +369,7 @@ id lx_ytmCachedLikeEndpointForRemoveLike;
     }
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer endpointWithStatus(raw)=%ld self=%@ result=%@",
           (long) status, self, result);
+    lx_ytmDebugProbeLikeEndpointFields(result, "endpointWithStatus result");
     return result;
 }
 
