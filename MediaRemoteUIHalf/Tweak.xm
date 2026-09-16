@@ -39,10 +39,18 @@ static void lx_debugLogAncestorChain(UIViewController *vc) {
 
 // TODO(debug): remove once we've identified the real Control Center card view/window.
 static void lx_debugLogAllWindows(void) {
-    for (UIWindow *window in [UIApplication sharedApplication].windows) {
-        NSLog(@"[SpotiLoveReborn][MRU-DEBUG] window: %@ class=%@ frame=%@ hidden=%d rootVC=%@",
-              window, NSStringFromClass([window class]), NSStringFromCGRect(window.frame), window.hidden,
-              NSStringFromClass([window.rootViewController class]));
+    // UIApplication.windows is deprecated (iOS 15+, -Werror fails the build on it) - go through
+    // each connected UIWindowScene's own windows instead.
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (![scene isKindOfClass: [UIWindowScene class]]) {
+            continue;
+        }
+        UIWindowScene *windowScene = (UIWindowScene *) scene;
+        for (UIWindow *window in windowScene.windows) {
+            NSLog(@"[SpotiLoveReborn][MRU-DEBUG] window: %@ class=%@ frame=%@ hidden=%d rootVC=%@",
+                  window, NSStringFromClass([window class]), NSStringFromCGRect(window.frame), window.hidden,
+                  NSStringFromClass([window.rootViewController class]));
+        }
     }
 }
 
