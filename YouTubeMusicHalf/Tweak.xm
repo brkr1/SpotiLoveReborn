@@ -150,6 +150,12 @@ static void lx_ytmDebugDumpFinalistClasses(void) {
         // an obvious -send/-execute/-start method we can hook next round.
         "YTInnerTubeRequest",
         "YTILikeTarget",
+        // Round 9: -endpointWithStatus: fires just from the like button rendering (no in-app tap
+        // needed, unlike requestForLikeWithTarget:/requestForRemoveLikeWithTarget:, which only
+        // fire after an actual tap inside YTM). Its returned YTILikeEndpoint already carries the
+        // target + like_params/remove_like_params we need - dump its real accessors here instead
+        // of guessing the property names from the protobuf field names.
+        "YTILikeEndpoint",
     };
     for (size_t i = 0; i < sizeof(finalists) / sizeof(finalists[0]); i++) {
         lx_ytmDebugDumpClassAndInstanceMethods(finalists[i]);
@@ -246,6 +252,14 @@ id lx_ytmCachedLikeRequestParams;       // requestParams that sets status to LIK
 id lx_ytmCachedRemoveLikeRequestParams; // requestParams that sets status to INDIFFERENT (2)
 NSInteger lx_ytmCachedCurrentLikeStatus = -1; // -1 = unknown/nothing observed yet
 
+// Round 9: cached YTILikeEndpoint objects from -endpointWithStatus:, which fires just from the
+// like button rendering (unlike requestForLikeWithTarget:/requestForRemoveLikeWithTarget:, which
+// only fire after an actual in-app tap - round 9's log showed the toggle handler skipping every
+// time because those never fired without one). Not used yet until the finalist dump above
+// confirms YTILikeEndpoint's real accessor names.
+id lx_ytmCachedLikeEndpointForLike;
+id lx_ytmCachedLikeEndpointForRemoveLike;
+
 %hook YTMLikeEndpointCommandImpl
 
 - (void) toggleLikeStatusForTrackWithLikeEndpoint: (id) likeEndpoint track: (id) track {
@@ -281,6 +295,14 @@ NSInteger lx_ytmCachedCurrentLikeStatus = -1; // -1 = unknown/nothing observed y
 
 - (id) endpointWithStatus: (NSInteger) status {
     id result = %orig;
+    // Cached separately by target status so round 10 can extract target/requestParams straight
+    // from these, once the dump above confirms YTILikeEndpoint's real accessor names - this
+    // fires just from the like button rendering, no in-app tap required.
+    if (status == 0) {
+        lx_ytmCachedLikeEndpointForLike = result;
+    } else if (status == 2) {
+        lx_ytmCachedLikeEndpointForRemoveLike = result;
+    }
     NSLog(@"[SpotiLoveReborn][YTM-DEBUG][HOOK] YTILikeButtonRenderer endpointWithStatus(raw)=%ld self=%@ result=%@",
           (long) status, self, result);
     return result;
