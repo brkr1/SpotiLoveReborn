@@ -162,7 +162,18 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
         if ([playerView respondsToSelector: @selector(transportControlsView)]) {
             UIView *transportControls = playerView.transportControlsView;
             if (transportControls != nil && !CGRectIsEmpty(transportControls.frame)) {
-                y = CGRectGetMidY(transportControls.frame) - (height / 2.0);
+                CGRect transportFrame = transportControls.frame;
+                y = CGRectGetMidY(transportFrame) - (height / 2.0);
+
+                // Control Center's compact card (~170x170) lays the transport row out flush with
+                // the card's edges (transportFrame.origin.x == 0) - unlike the lock screen and
+                // Control Center's own expanded card, both of which leave a left margin before it
+                // (origin.x == 14 or 24). Centering the heart on the row's Y there puts it right on
+                // top of the backward button, since there's no free margin to its left. Move it
+                // above the row there instead.
+                if (transportFrame.origin.x <= 0.5) {
+                    y = CGRectGetMinY(transportFrame) - height - 6;
+                }
             }
         }
     } @catch (NSException *e) {
@@ -215,7 +226,7 @@ void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
 
     lx_mruHeartButton = [[UIButton alloc] init];
     lx_mruHeartButton.translatesAutoresizingMaskIntoConstraints = YES;
-    [lx_mruHeartButton.titleLabel setFont: [UIFont systemFontOfSize: 24.0]];
+    [lx_mruHeartButton.titleLabel setFont: [UIFont systemFontOfSize: 30.0]];
     lx_updateMRUHeartButtonAppearance();
 
     [lx_mruHeartButton addTarget: playerView action: @selector(lx_heartButtonTappedFromView) forControlEvents: UIControlEventTouchUpInside];

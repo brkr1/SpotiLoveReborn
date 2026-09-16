@@ -145,7 +145,7 @@ void lx_ensureMRUDIHeartButton(UIView *host, UIViewController *vc) {
 
     lx_mruDIHeartButton = [[UIButton alloc] init];
     lx_mruDIHeartButton.translatesAutoresizingMaskIntoConstraints = YES;
-    [lx_mruDIHeartButton.titleLabel setFont: [UIFont systemFontOfSize: 24.0]];
+    [lx_mruDIHeartButton.titleLabel setFont: [UIFont systemFontOfSize: 30.0]];
     lx_updateMRUDIHeartButtonAppearance();
 
     [lx_mruDIHeartButton addTarget: host action: @selector(lx_diHeartButtonTappedFromView) forControlEvents: UIControlEventTouchUpInside];
