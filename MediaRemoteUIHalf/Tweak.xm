@@ -140,12 +140,20 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
 
     lx_mruHeartButton.frame = CGRectMake(leftOffset, y, width, height);
     [playerView bringSubviewToFront: lx_mruHeartButton];
+    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_layoutMRUHeartButton: playerView.bounds=%@ transportControlsView=%@ resultFrame=%@ hidden=%d alpha=%f window=%@",
+          NSStringFromCGRect(playerView.bounds),
+          [playerView respondsToSelector: @selector(transportControlsView)] ? playerView.transportControlsView : nil,
+          NSStringFromCGRect(lx_mruHeartButton.frame), lx_mruHeartButton.hidden, lx_mruHeartButton.alpha, playerView.window);
 }
 
+// TODO(debug): remove once the heart shows up correctly in Control Center.
 void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
     MRUNowPlayingViewController *owningVC = lx_owningNowPlayingVC(playerView);
+    BOOL supported = lx_isSupportedNowPlayingContext(owningVC);
+    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] lx_ensureMRUHeartButton: playerView=%@ owningVC=%@ context=%lld supported=%d",
+          playerView, owningVC, owningVC.context, supported);
 
-    if (!lx_isSupportedNowPlayingContext(owningVC)) {
+    if (!supported) {
         if (lx_mruHeartButton && lx_mruHeartButton.superview == playerView) {
             [lx_mruHeartButton removeFromSuperview];
             lx_mruHeartButton = nil;
@@ -179,6 +187,7 @@ void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
 
 - (void) layoutSubviews {
     %orig;
+    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] MRUNowPlayingView layoutSubviews: self=%@", self);
     if (@available(iOS 16, *)) {
         lx_ensureMRUHeartButton((MRUNowPlayingView *) self);
     }
