@@ -56,7 +56,9 @@ void lx_updateMRUHeartButtonAppearance(void) {
     }
     BOOL isLiked = lx_getLikedState();
     [lx_mruHeartButton setTitle: (isLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
-    [lx_mruHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
+    // Explicit white, not labelColor: Control Center's compact card hosts this view with a
+    // light-style trait collection, so the dynamic color resolved black there.
+    [lx_mruHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor whiteColor] colorWithAlphaComponent: 0.85])
                              forState: UIControlStateNormal];
 }
 
@@ -121,7 +123,7 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
                 // Control Center's compact card has no left margin before the transport row
                 // (origin.x == 0), so centering there sits on top of the backward button instead.
                 if (transportFrame.origin.x <= 0.5) {
-                    y = CGRectGetMinY(transportFrame) - (height * 0.7) - 4;
+                    y = CGRectGetMinY(transportFrame) - (height * 0.5) - 2;
                 }
             }
         }

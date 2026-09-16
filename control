@@ -1,7 +1,7 @@
 Package: com.brkr1.tweaks.spotilovereborn
 Name: SpotiLove Reborn
 Depends: mobilesubstrate
-Version: 1.6
+Version: 1.7
 Architecture: iphoneos-arm
 Description: Add Spotify Tracks to Liked Collection from the Lock Screen and Dynamic Island
 Maintainer: brkr1

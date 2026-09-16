@@ -60,7 +60,8 @@ void lx_updateMRUDIHeartButtonAppearance(void) {
     }
     BOOL isLiked = lx_getLikedState();
     [lx_mruDIHeartButton setTitle: (isLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
-    [lx_mruDIHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
+    // Explicit white, not labelColor: same fix as Tweak.xm for consistency across surfaces.
+    [lx_mruDIHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor whiteColor] colorWithAlphaComponent: 0.85])
                                forState: UIControlStateNormal];
 }
 
