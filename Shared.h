@@ -21,7 +21,7 @@ static inline void lx_setLikedState(BOOL isLiked) {
     notify_post(kLikedStateNotifyName);
 }
 
-// Called by the MediaRemoteUI half to read the real liked state. Always live -
+// Called by the MediaRemoteUI half to read the real liked state.
 static inline BOOL lx_getLikedState(void) {
     static int token = -1;
     if (token == -1 && notify_register_check(kLikedStateNotifyName, &token) != NOTIFY_STATUS_OK) {

@@ -1,17 +1,5 @@
-// Dynamic Island expanded now-playing player. Two class generations, same
-// mechanism Crescendo/NextUp3 use here: iOS 16 MRUSessionNowPlaying*,
-// iOS 17-26 MRUActivityNowPlaying*, both installed on demand via
-// _dyld_register_func_for_add_image since MediaControls.framework loads
-// lazily in this process.
-//
-// Unlike Crescendo's volume slider or NextUp3's Up Next row, the heart
-// doesn't need a reserved strip of its own - it's a small icon that sits in
-// the existing transport-controls row, the same way it already does on the
-// lock screen (Tweak.xm). So there's no preferredHeightForBottomSafeArea
-// growth or -bounds clamp here: just find the real
-// MRUNowPlayingTransportControlsView (a real, local view in this process,
-// exactly like the lock screen) among the player's subviews and anchor to
-// its frame.
+// Dynamic Island expanded now-playing player. Two class generations: iOS 16
+// MRUSessionNowPlaying*, iOS 17-26 MRUActivityNowPlaying* (Crescendo/NextUp3 technique).
 #import "../Shared.h"
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
@@ -208,12 +196,8 @@ void lx_ensureMRUDIHeartButton(UIView *host, UIViewController *vc) {
 
 %end // LXDI16
 
-// MediaControls.framework is loaded on demand in this process, so at
-// constructor time these classes may not exist yet and %init would silently
-// hook nothing. Install once the image shows up instead;
-// _dyld_register_func_for_add_image replays already-loaded images, so a
-// process that already has it linked still initialises at the same moment
-// it used to.
+// MediaControls.framework loads on demand, so these classes may not exist at
+// %ctor time; install once the image shows up instead of via %init directly.
 static void LXDIInitIfLoaded(void) {
     static BOOL done = NO;
     if (done) {
