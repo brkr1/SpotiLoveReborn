@@ -18,14 +18,10 @@
 
 @interface MRUNowPlayingViewController : UIViewController
 @property (nonatomic, retain) MRUNowPlayingView *view;
-@property (nonatomic) long long context; // 2 == lock screen (Control Center hosts the same
-                                          // MRUNowPlayingViewController/MRUNowPlayingView with
-                                          // the same context value - verified: NextUp3's own
-                                          // Control Center hooks read this nested VC off
-                                          // MRUControlCenterViewController.nowPlayingViewController)
+@property (nonatomic) long long context; // 2 == lock screen
 @end
 
-static const long long kLXNowPlayingContext = 2;
+static const long long kLXLockScreenContext = 2;
 
 static MRUNowPlayingViewController *lx_owningNowPlayingVC(UIView *view) {
     Class vcClass = objc_getClass("MRUNowPlayingViewController");
@@ -39,11 +35,29 @@ static MRUNowPlayingViewController *lx_owningNowPlayingVC(UIView *view) {
     return (MRUNowPlayingViewController *) responder;
 }
 
-// Lock screen and Control Center's now-playing card both host this same view/context - the
-// heart's own layout (anchored to transportControlsView) doesn't need to know which one it's
-// in, unlike NextUp3's Control Center row, which grows the card height for its own extra row.
+// NextUp3's own Control Center hooks (NUHooksControlCenterLegacy.x) confirm
+// MRUControlCenterViewController hosts this same MRUNowPlayingViewController/MRUNowPlayingView
+// for its now-playing card - but its .context value there is unconfirmed (an earlier version of
+// this function assumed it was still 2, same as the lock screen, and the heart never appeared in
+// Control Center - that assumption was never actually verified). Detecting Control Center by
+// walking the ancestor chain instead is the same technique this function used to use to
+// EXCLUDE Control Center, so it's already proven to correctly identify it either way.
 static BOOL lx_isSupportedNowPlayingContext(MRUNowPlayingViewController *vc) {
-    return vc != nil && vc.context == kLXNowPlayingContext;
+    if (!vc) {
+        return NO;
+    }
+    if (vc.context == kLXLockScreenContext) {
+        return YES;
+    }
+    Class controlCenterClass = objc_getClass("MRUControlCenterViewController");
+    if (controlCenterClass) {
+        for (UIViewController *ancestor = vc; ancestor; ancestor = ancestor.parentViewController) {
+            if ([ancestor isKindOfClass: controlCenterClass]) {
+                return YES;
+            }
+        }
+    }
+    return NO;
 }
 
 UIButton *lx_mruHeartButton;
