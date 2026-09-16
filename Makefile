@@ -19,6 +19,5 @@ include $(THEOS)/makefiles/common.mk
 
 SUBPROJECTS += MediaRemoteUIHalf
 SUBPROJECTS += SpotifyHalf
-SUBPROJECTS += YouTubeMusicHalf
 
 include $(THEOS_MAKE_PATH)/aggregate.mk

@@ -18,10 +18,14 @@
 
 @interface MRUNowPlayingViewController : UIViewController
 @property (nonatomic, retain) MRUNowPlayingView *view;
-@property (nonatomic) long long context; // 2 == lock screen
+@property (nonatomic) long long context; // 2 == lock screen (Control Center hosts the same
+                                          // MRUNowPlayingViewController/MRUNowPlayingView with
+                                          // the same context value - verified: NextUp3's own
+                                          // Control Center hooks read this nested VC off
+                                          // MRUControlCenterViewController.nowPlayingViewController)
 @end
 
-static const long long kLXLockScreenContext = 2;
+static const long long kLXNowPlayingContext = 2;
 
 static MRUNowPlayingViewController *lx_owningNowPlayingVC(UIView *view) {
     Class vcClass = objc_getClass("MRUNowPlayingViewController");
@@ -35,58 +39,20 @@ static MRUNowPlayingViewController *lx_owningNowPlayingVC(UIView *view) {
     return (MRUNowPlayingViewController *) responder;
 }
 
-static BOOL lx_isLockScreenContext(MRUNowPlayingViewController *vc) {
-    if (!vc) {
-        return NO;
-    }
-    if (vc.context != kLXLockScreenContext) {
-        return NO;
-    }
-    Class controlCenterClass = objc_getClass("MRUControlCenterViewController");
-    if (controlCenterClass) {
-        for (UIViewController *ancestor = vc; ancestor; ancestor = ancestor.parentViewController) {
-            if ([ancestor isKindOfClass: controlCenterClass]) {
-                return NO;
-            }
-        }
-    }
-    return YES;
+// Lock screen and Control Center's now-playing card both host this same view/context - the
+// heart's own layout (anchored to transportControlsView) doesn't need to know which one it's
+// in, unlike NextUp3's Control Center row, which grows the card height for its own extra row.
+static BOOL lx_isSupportedNowPlayingContext(MRUNowPlayingViewController *vc) {
+    return vc != nil && vc.context == kLXNowPlayingContext;
 }
 
 UIButton *lx_mruHeartButton;
-static LXMusicSource lx_mruCurrentSource = LXMusicSourceUnknown;
-
-static BOOL lx_mruLikedStateForCurrentSource(void) {
-    switch (lx_mruCurrentSource) {
-        case LXMusicSourceSpotify: return lx_getLikedState();
-        case LXMusicSourceYouTubeMusic: return lx_getLikedStateYouTubeMusic();
-        default: return NO;
-    }
-}
-
-// TODO(debug): remove once multi-app source routing is confirmed working for YouTube Music.
-static void lx_mruPostLikeToggleForCurrentSource(void) {
-    NSString *name;
-    switch (lx_mruCurrentSource) {
-        case LXMusicSourceSpotify: name = kLikeToggleDarwinNotification; break;
-        case LXMusicSourceYouTubeMusic: name = kLikeToggleDarwinNotificationYouTubeMusic; break;
-        default:
-            NSLog(@"[SpotiLoveReborn][MRU-DEBUG] heart tapped but lx_mruCurrentSource=%ld (unknown), not posting anything", (long) lx_mruCurrentSource);
-            return;
-    }
-    NSLog(@"[SpotiLoveReborn][MRU-DEBUG] heart tapped, posting toggle for source=%ld", (long) lx_mruCurrentSource);
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        (__bridge CFStringRef) name,
-        NULL, NULL, true
-    );
-}
 
 void lx_updateMRUHeartButtonAppearance(void) {
     if (!lx_mruHeartButton) {
         return;
     }
-    BOOL isLiked = lx_mruLikedStateForCurrentSource();
+    BOOL isLiked = lx_getLikedState();
     [lx_mruHeartButton setTitle: (isLiked ? @"♥" : @"♡") forState: UIControlStateNormal];
     [lx_mruHeartButton setTitleColor: (isLiked ? [UIColor systemRedColor] : [[UIColor labelColor] colorWithAlphaComponent: 0.85])
                              forState: UIControlStateNormal];
@@ -104,7 +70,11 @@ void lx_heartButtonTapped(void) {
         }];
     }];
 
-    lx_mruPostLikeToggleForCurrentSource();
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge CFStringRef) kLikeToggleDarwinNotification,
+        NULL, NULL, true
+    );
 }
 
 UIButton *lx_findMRULyricationButton(UIView *playerView) {
@@ -161,7 +131,7 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
 void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
     MRUNowPlayingViewController *owningVC = lx_owningNowPlayingVC(playerView);
 
-    if (!lx_isLockScreenContext(owningVC)) {
+    if (!lx_isSupportedNowPlayingContext(owningVC)) {
         if (lx_mruHeartButton && lx_mruHeartButton.superview == playerView) {
             [lx_mruHeartButton removeFromSuperview];
             lx_mruHeartButton = nil;
@@ -215,20 +185,8 @@ void lx_handleLikedStateChangedInMRU(void) {
 
 %ctor {
     if (@available(iOS 16, *)) {
-        int spotifyToken;
-        notify_register_dispatch(kLikedStateNotifyName, &spotifyToken, dispatch_get_main_queue(), ^(int t) {
-            lx_handleLikedStateChangedInMRU();
-        });
-
-        int ytMusicToken;
-        notify_register_dispatch(kLikedStateNotifyNameYouTubeMusic, &ytMusicToken, dispatch_get_main_queue(), ^(int t) {
-            lx_handleLikedStateChangedInMRU();
-        });
-
-        lx_registerForNowPlayingAppChanges(^{
-            lx_handleLikedStateChangedInMRU();
-        });
-        lx_refreshNowPlayingSource(&lx_mruCurrentSource, ^{
+        int token;
+        notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
             lx_handleLikedStateChangedInMRU();
         });
     }
