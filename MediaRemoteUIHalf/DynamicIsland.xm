@@ -54,6 +54,27 @@ static UIView *lx_diFindTransportControls(UIView *host) {
     return nil;
 }
 
+// Finds the system waveform/source icon next to the title (not a label, sits
+// above the transport row, right half of the card) to mirror its right margin.
+static UIView *lx_diFindTrailingHeaderIcon(UIView *host, UIView *transportControls) {
+    CGFloat transportTop = (transportControls != nil && !CGRectIsEmpty(transportControls.frame))
+        ? CGRectGetMinY(transportControls.frame) : CGRectGetHeight(host.bounds);
+    CGFloat cardWidth = host.bounds.size.width;
+    UIView *best = nil;
+    for (UIView *sub in host.subviews) {
+        if (sub == lx_mruDIHeartButton || CGRectIsEmpty(sub.frame) || [sub isKindOfClass: [UILabel class]]) {
+            continue;
+        }
+        if (CGRectGetMaxY(sub.frame) > transportTop || CGRectGetMidX(sub.frame) < cardWidth * 0.6) {
+            continue;
+        }
+        if (best == nil || CGRectGetMaxX(sub.frame) > CGRectGetMaxX(best.frame)) {
+            best = sub;
+        }
+    }
+    return best;
+}
+
 void lx_updateMRUDIHeartButtonAppearance(void) {
     if (!lx_mruDIHeartButton) {
         return;
@@ -99,6 +120,15 @@ void lx_layoutMRUDIHeartButton(UIView *host) {
     UIView *transportControls = lx_diFindTransportControls(host);
     if (transportControls != nil && !CGRectIsEmpty(transportControls.frame)) {
         y = CGRectGetMidY(transportControls.frame) - (height / 2.0);
+    }
+
+    // Mirror the header waveform icon's own right margin instead of a guessed fixed value.
+    UIView *trailingIcon = lx_diFindTrailingHeaderIcon(host, transportControls);
+    if (trailingIcon != nil) {
+        CGFloat mirroredOffset = host.bounds.size.width - CGRectGetMaxX(trailingIcon.frame);
+        if (mirroredOffset > 0) {
+            leftOffset = mirroredOffset;
+        }
     }
 
     lx_mruDIHeartButton.frame = CGRectMake(leftOffset, y, width, height);

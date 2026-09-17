@@ -94,6 +94,27 @@ UIButton *lx_findMRULyricationButton(UIView *playerView) {
     return nil;
 }
 
+// Finds the system waveform/source icon next to the title (not a label, sits
+// above the transport row, right half of the card) to mirror its right margin.
+UIView *lx_findMRUTrailingHeaderIcon(UIView *playerView, UIView *transportControls) {
+    CGFloat transportTop = (transportControls != nil && !CGRectIsEmpty(transportControls.frame))
+        ? CGRectGetMinY(transportControls.frame) : CGRectGetHeight(playerView.bounds);
+    CGFloat cardWidth = playerView.bounds.size.width;
+    UIView *best = nil;
+    for (UIView *subview in [playerView.subviews copy]) {
+        if (subview == lx_mruHeartButton || CGRectIsEmpty(subview.frame) || [subview isKindOfClass: [UILabel class]]) {
+            continue;
+        }
+        if (CGRectGetMaxY(subview.frame) > transportTop || CGRectGetMidX(subview.frame) < cardWidth * 0.6) {
+            continue;
+        }
+        if (best == nil || CGRectGetMaxX(subview.frame) > CGRectGetMaxX(best.frame)) {
+            best = subview;
+        }
+    }
+    return best;
+}
+
 void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
     if (!lx_mruHeartButton) {
         return;
@@ -112,10 +133,11 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
     }
 
     CGFloat y = playerView.bounds.size.height - height - 15;
+    UIView *transportControls = nil;
 
     @try {
         if ([playerView respondsToSelector: @selector(transportControlsView)]) {
-            UIView *transportControls = playerView.transportControlsView;
+            transportControls = playerView.transportControlsView;
             if (transportControls != nil && !CGRectIsEmpty(transportControls.frame)) {
                 CGRect transportFrame = transportControls.frame;
                 y = CGRectGetMidY(transportFrame) - (height / 2.0);
@@ -129,6 +151,18 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
         }
     } @catch (NSException *e) {
         // Fall back to the bottom-anchored default above.
+    }
+
+    // Without LX, mirror the header waveform icon's own right margin so the
+    // heart's left inset matches it, instead of a guessed fixed value.
+    if (lyricationButton == nil) {
+        UIView *trailingIcon = lx_findMRUTrailingHeaderIcon(playerView, transportControls);
+        if (trailingIcon != nil) {
+            CGFloat mirroredOffset = playerView.bounds.size.width - CGRectGetMaxX(trailingIcon.frame);
+            if (mirroredOffset > 0) {
+                leftOffset = mirroredOffset;
+            }
+        }
     }
 
     lx_mruHeartButton.frame = CGRectMake(leftOffset, y, width, height);
