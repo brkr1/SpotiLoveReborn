@@ -4,6 +4,8 @@
 
 static NSString * const kLikeToggleDarwinNotification = @"com.brkr1.tweaks.spotilovereborn/toggle";
 
+static NSString * const kLXSpotifyBundleID = @"com.spotify.client";
+
 static const char * const kLikedStateNotifyName = "com.brkr1.tweaks.spotilovereborn/isLikedState";
 
 #ifdef __cplusplus

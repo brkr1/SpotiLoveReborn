@@ -2,6 +2,56 @@
 // springboard (Control Center), whose Bundles filter picks up both.
 #import "../Shared.h"
 #import <objc/runtime.h>
+#import <dlfcn.h>
+
+#pragma mark - Now-playing app tracking (gates the button to Spotify only)
+
+// Same technique as SpotiQueue's SQIsSpotifyNowPlaying: MediaRemote.framework is
+// already loaded in this process, resolve its symbols lazily via dlopen/dlsym.
+static void *lx_mediaRemoteHandle(void) {
+    static void *handle;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_LAZY);
+    });
+    return handle;
+}
+
+BOOL lx_mruSpotifyIsNowPlaying = NO;
+
+static void lx_refreshNowPlayingApp(void) {
+    void *handle = lx_mediaRemoteHandle();
+    void (*getClient)(dispatch_queue_t, void (^)(id)) = handle ? dlsym(handle, "MRMediaRemoteGetNowPlayingClient") : NULL;
+    NSString *(*getBundle)(id) = handle ? dlsym(handle, "MRNowPlayingClientGetBundleIdentifier") : NULL;
+    NSString *(*getParent)(id) = handle ? dlsym(handle, "MRNowPlayingClientGetParentAppBundleIdentifier") : NULL;
+    if (!getClient || (!getBundle && !getParent)) {
+        return;
+    }
+    getClient(dispatch_get_main_queue(), ^(id client) {
+        NSString *bundleID = (client && getBundle) ? getBundle(client) : nil;
+        if (!bundleID && client && getParent) {
+            bundleID = getParent(client);
+        }
+        lx_mruSpotifyIsNowPlaying = [bundleID isEqualToString: kLXSpotifyBundleID];
+    });
+}
+
+static void lx_startNowPlayingTracking(void) {
+    void *handle = lx_mediaRemoteHandle();
+    if (!handle) {
+        return;
+    }
+    void (*reg)(dispatch_queue_t) = dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications");
+    if (reg) {
+        reg(dispatch_get_main_queue());
+    }
+    NSString * __unsafe_unretained *namePtr =
+        (NSString * __unsafe_unretained *) dlsym(handle, "kMRMediaRemoteNowPlayingApplicationDidChangeNotification");
+    NSString *name = namePtr ? *namePtr : @"kMRMediaRemoteNowPlayingApplicationDidChangeNotification";
+    [[NSNotificationCenter defaultCenter] addObserverForName: name object: nil queue: nil
+        usingBlock: ^(NSNotification *note) { lx_refreshNowPlayingApp(); }];
+    lx_refreshNowPlayingApp();
+}
 
 @interface MRUNowPlayingView : UIView
 @property (nonatomic, readonly) UIView *transportControlsView;
@@ -171,7 +221,7 @@ void lx_layoutMRUHeartButton(MRUNowPlayingView *playerView) {
 
 void lx_ensureMRUHeartButton(MRUNowPlayingView *playerView) {
     MRUNowPlayingViewController *owningVC = lx_owningNowPlayingVC(playerView);
-    BOOL supported = lx_isSupportedNowPlayingContext(owningVC);
+    BOOL supported = lx_isSupportedNowPlayingContext(owningVC) && lx_mruSpotifyIsNowPlaying;
 
     if (!supported) {
         if (lx_mruHeartButton && lx_mruHeartButton.superview == playerView) {
@@ -227,6 +277,8 @@ void lx_handleLikedStateChangedInMRU(void) {
 
 %ctor {
     if (@available(iOS 16, *)) {
+        lx_startNowPlayingTracking();
+
         int token;
         notify_register_dispatch(kLikedStateNotifyName, &token, dispatch_get_main_queue(), ^(int t) {
             lx_handleLikedStateChangedInMRU();

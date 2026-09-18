@@ -18,6 +18,9 @@
 static const long long kLXDIExpandedMode = 4; // activeLayoutMode when fully expanded
 static const CGFloat kLXDIExpandedMinHeight = 120.0; // view is reused for the compact pill
 
+// Tracked once in Tweak.xm (same dylib) via MediaRemote's now-playing-client API.
+extern BOOL lx_mruSpotifyIsNowPlaying;
+
 UIButton *lx_mruDIHeartButton;
 
 // Which of the two class generations applies, decided by which %init ran -
@@ -139,7 +142,8 @@ static BOOL lx_diShouldShow(UIView *host, UIViewController *vc) {
     return vc != nil
         && host.bounds.size.height >= kLXDIExpandedMinHeight
         && gLXDIExpanded != NULL
-        && gLXDIExpanded(vc);
+        && gLXDIExpanded(vc)
+        && lx_mruSpotifyIsNowPlaying;
 }
 
 void lx_ensureMRUDIHeartButton(UIView *host, UIViewController *vc) {
