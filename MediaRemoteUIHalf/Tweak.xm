@@ -21,9 +21,12 @@ BOOL lx_mruSpotifyIsNowPlaying = NO;
 
 static void lx_refreshNowPlayingApp(void) {
     void *handle = lx_mediaRemoteHandle();
-    void (*getClient)(dispatch_queue_t, void (^)(id)) = handle ? dlsym(handle, "MRMediaRemoteGetNowPlayingClient") : NULL;
-    NSString *(*getBundle)(id) = handle ? dlsym(handle, "MRNowPlayingClientGetBundleIdentifier") : NULL;
-    NSString *(*getParent)(id) = handle ? dlsym(handle, "MRNowPlayingClientGetParentAppBundleIdentifier") : NULL;
+    void (*getClient)(dispatch_queue_t, void (^)(id)) = handle
+        ? (void (*)(dispatch_queue_t, void (^)(id))) dlsym(handle, "MRMediaRemoteGetNowPlayingClient") : NULL;
+    NSString *(*getBundle)(id) = handle
+        ? (NSString *(*)(id)) dlsym(handle, "MRNowPlayingClientGetBundleIdentifier") : NULL;
+    NSString *(*getParent)(id) = handle
+        ? (NSString *(*)(id)) dlsym(handle, "MRNowPlayingClientGetParentAppBundleIdentifier") : NULL;
     if (!getClient || (!getBundle && !getParent)) {
         return;
     }
@@ -41,7 +44,7 @@ static void lx_startNowPlayingTracking(void) {
     if (!handle) {
         return;
     }
-    void (*reg)(dispatch_queue_t) = dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications");
+    void (*reg)(dispatch_queue_t) = (void (*)(dispatch_queue_t)) dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications");
     if (reg) {
         reg(dispatch_get_main_queue());
     }
